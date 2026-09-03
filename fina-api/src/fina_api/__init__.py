@@ -1,0 +1,1 @@
+"""FinaAPI application package."""
