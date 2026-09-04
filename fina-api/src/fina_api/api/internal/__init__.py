@@ -1,0 +1,1 @@
+"""Kubernetes-only HTTP endpoints."""
