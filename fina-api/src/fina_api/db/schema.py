@@ -1,1 +1,0 @@
-CURRENT_SCHEMA_REVISION = "0001_initial_schema"
