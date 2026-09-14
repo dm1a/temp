@@ -94,7 +94,7 @@ ENV PATH="/app/.venv/bin:$PATH" \
 
 EXPOSE 8000 9000
 
-USER app
+USER 10001:10001
 
 # Liveness only -- deliberately not /probes/ready, which depends on the
 # database; a HEALTHCHECK restarting the container wouldn't fix a database
