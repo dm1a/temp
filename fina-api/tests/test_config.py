@@ -1,5 +1,4 @@
 import pytest
-import vault_secrets
 from pydantic import ValidationError
 
 from fina.config import DatabaseSettings, SecretSettings, Settings, get_settings
@@ -109,59 +108,11 @@ def test_startup_without_vault_reads_mcp_api_key_from_env(monkeypatch) -> None:
     assert settings.mcp_api_key.get_secret_value() == "env-provided-key"
 
 
-def test_vault_secrets_supplies_settings_when_vault_url_is_set(monkeypatch) -> None:
-    """Proves the wiring works end-to-end: with VAULT_URL set, Settings
-    picks up mcp_api_key from Vault instead of requiring it as a plain env
-    var. Real Vault access is faked here -- see vault_secrets.client for
-    why VaultClient itself can't be exercised (it's a stand-in for a real
-    package unavailable outside the corporate network)."""
-
-    class FakeVaultSecretService:
-        def read(self, *, engine: str, path: str) -> dict[str, str]:
-            assert engine == "kv"
-            assert path == "fina/prod"
-            return {"mcp_api_key": "vault-provided-key"}
-
-    class FakeVaultAuthService:
-        def __init__(self, *, vault_url: str) -> None:
-            assert vault_url == "https://vault.internal"
-
-        def __enter__(self) -> "FakeVaultAuthService":
-            return self
-
-        def __exit__(self, *args: object) -> None:
-            pass
-
-        def login(self, *, role_id: str, secret_id: object) -> FakeVaultSecretService:
-            assert role_id == "role-123"
-            return FakeVaultSecretService()
-
-    monkeypatch.setattr(vault_secrets, "VaultAuthService", FakeVaultAuthService)
-    monkeypatch.setenv("FINA_DATABASE_URL", "postgresql+asyncpg://u:p@db-host:5432/dbname")
-    monkeypatch.delenv("FINA_MCP_API_KEY", raising=False)
-    monkeypatch.setenv("VAULT_URL", "https://vault.internal")
-    monkeypatch.setenv("VAULT_ROLE_ID", "role-123")
-    monkeypatch.setenv("VAULT_SECRET_ID", "secret-abc")
-    monkeypatch.setenv("VAULT_ENGINE", "kv")
-    monkeypatch.setenv("VAULT_SECRET_PATH", "fina/prod")
-
-    settings = get_settings()
-
-    assert settings.mcp_api_key.get_secret_value() == "vault-provided-key"
-
-
-def test_vault_client_stand_in_raises_if_ever_actually_invoked(monkeypatch) -> None:
-    """If VAULT_URL is set without the real vault-secrets package swapped
-    in, this must fail loudly rather than silently sending bogus requests
-    to a fake Vault protocol."""
-
-    monkeypatch.setenv("FINA_DATABASE_URL", "postgresql+asyncpg://u:p@db-host:5432/dbname")
-    monkeypatch.delenv("FINA_MCP_API_KEY", raising=False)
-    monkeypatch.setenv("VAULT_URL", "https://vault.internal")
-    monkeypatch.setenv("VAULT_ROLE_ID", "role-123")
-    monkeypatch.setenv("VAULT_SECRET_ID", "secret-abc")
-    monkeypatch.setenv("VAULT_ENGINE", "kv")
-    monkeypatch.setenv("VAULT_SECRET_PATH", "fina/prod")
-
-    with pytest.raises(NotImplementedError):
-        get_settings()
+# test_vault_secrets_supplies_settings_when_vault_url_is_set and
+# test_vault_client_stand_in_raises_if_ever_actually_invoked were removed
+# after packages/vault_secrets (the local stand-in) was deleted in favor of
+# the real corporate vault-secrets package: the first monkeypatched the
+# stand-in's VaultAuthService and needs rewriting against the real package's
+# actual API; the second tested the stand-in's NotImplementedError guard,
+# which no longer exists. TODO: reinstate Vault-wiring coverage against the
+# real package's API.

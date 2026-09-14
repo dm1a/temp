@@ -48,14 +48,15 @@ COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
 
-# Test runner, mirroring Dockerfile.public's `test` stage: same dev-extra
-# sync and pytest entrypoint, but built off this file's corporate `build`
-# stage so it works with no path to the public internet (see
+# Test runner, mirroring Dockerfile.public's `test` stage: same sync (the
+# `dev` dependency group is included by default; only --no-dev above opts
+# out of it) and pytest entrypoint, but built off this file's corporate
+# `build` stage so it works with no path to the public internet (see
 # compose.test.corporate.yaml). uv itself is already installed via the
-# Nexus proxy above, so the dev-extra sync below goes through the same
-# resolution path the --no-dev sync already relies on.
+# Nexus proxy above, so the sync below goes through the same resolution
+# path the --no-dev sync already relies on.
 FROM build AS test
-RUN uv sync --frozen --extra dev --no-editable
+RUN uv sync --frozen --no-editable
 COPY alembic.ini pytest.ini ./
 COPY alembic ./alembic
 COPY tests ./tests

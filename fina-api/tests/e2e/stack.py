@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -14,6 +15,12 @@ ROOT = Path(__file__).parents[2]
 API_KEY = "e2e-only-api-key"
 AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 SERVICES = ("api-1", "api-2")
+
+# compose.e2e.yaml needs a public path to Docker Hub/ghcr.io (Dockerfile.public,
+# plain postgres:15-alpine). On a machine with no public internet access, set
+# this to compose.e2e.corporate.yaml, which builds Dockerfile's runtime stage
+# and pulls postgres from the same internal registry mirror instead.
+COMPOSE_FILE = os.environ.get("FINA_E2E_COMPOSE_FILE", "compose.e2e.yaml")
 
 
 @dataclass
@@ -30,7 +37,7 @@ class ComposeStack:
             "--project-name",
             self.project,
             "--file",
-            str(ROOT / "compose.e2e.yaml"),
+            str(ROOT / COMPOSE_FILE),
             *args,
         ]
         result = subprocess.run(

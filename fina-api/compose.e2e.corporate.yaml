@@ -1,0 +1,71 @@
+# Corporate-network equivalent of compose.e2e.yaml: builds Dockerfile's
+# `runtime` stage instead of Dockerfile.public's, and pulls postgres from
+# the same internal Docker Hub mirror Dockerfile already uses for python,
+# since plain `postgres:15-alpine` isn't reachable without a path to the
+# public internet. Point tests/e2e/stack.py at this file (see its
+# FINA_E2E_COMPOSE_FILE env var) instead of compose.e2e.yaml on a machine
+# with no public internet access.
+name: fina-corporate
+
+x-runtime: &runtime
+  image: ${COMPOSE_PROJECT_NAME}-app
+  build:
+    context: .
+    dockerfile: Dockerfile
+    target: runtime
+
+x-app: &app
+  <<: *runtime
+  environment:
+    FINA_DATABASE_URL: postgresql+asyncpg://fina_e2e:fina_e2e@postgres:5432/fina_e2e
+    FINA_MCP_API_KEY: e2e-only-api-key
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
+  ports:
+    - "127.0.0.1::8000"
+    - "127.0.0.1::9000"
+  healthcheck:
+    test:
+      - CMD
+      - python
+      - -c
+      - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:9000/probes/ready', timeout=2)"
+    interval: 1s
+    timeout: 3s
+    retries: 60
+
+services:
+  postgres:
+    image: cr.ci.sberinsur.local/dockerhub/library/postgres:15-alpine
+    environment:
+      POSTGRES_USER: fina_e2e
+      POSTGRES_PASSWORD: fina_e2e
+      POSTGRES_DB: fina_e2e
+    ports:
+      - "127.0.0.1::5432"
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fina_e2e -d fina_e2e"]
+      interval: 1s
+      timeout: 3s
+      retries: 60
+
+  migrate:
+    <<: *runtime
+    command: ["alembic", "upgrade", "head"]
+    environment:
+      FINA_DATABASE_URL: postgresql+asyncpg://fina_e2e:fina_e2e@postgres:5432/fina_e2e
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api-1:
+    <<: *app
+
+  api-2:
+    <<: *app
+
+volumes:
+  database:

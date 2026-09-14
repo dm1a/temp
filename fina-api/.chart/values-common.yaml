@@ -57,29 +57,16 @@ gracefulShutdown:
 
 sharedEnvVars:
   - sharedVarRefName: config-fina
-    sharedVarRefKey: FINA_MAX_RETRY_ATTEMPTS
-    envVariableName: FINA_MAX_RETRY_ATTEMPTS
-
-  - sharedVarRefName: config-fina
-    sharedVarRefKey: FINA_SQL_ECHO
-    envVariableName: FINA_SQL_ECHO
-
-  - sharedVarRefName: config-fina
     envVariableName: APP_NAME_ENV_LINK
     sharedVarRefKey: APP_NAME_ENV_LINK
 
-  # TODO: remove env. var. that are present in config-...yaml
   - sharedVarRefName: config-fina
     envVariableName: APP_NAME
     sharedVarRefKey: APP_NAME
 
   - sharedVarRefName: config-fina
-    envVariableName: APP_LOG_LEVEL
-    sharedVarRefKey: APP_LOG_LEVEL
-
-  - sharedVarRefName: config-fina
-    envVariableName: LOG_HANDLERS
-    sharedVarRefKey: LOG_HANDLERS
+    envVariableName: PROJECT_CODE
+    sharedVarRefKey: PROJECT_CODE
 
   - sharedVarRefName: config-fina
     envVariableName: LOGSTASH_LOG_HOST
@@ -88,14 +75,6 @@ sharedEnvVars:
   - sharedVarRefName: config-fina
     envVariableName: LOGSTASH_LOG_PORT
     sharedVarRefKey: LOGSTASH_LOG_PORT
-
-  - sharedVarRefName: config-fina
-    envVariableName: PROJECT_CODE
-    sharedVarRefKey: PROJECT_CODE
-
-  - sharedVarRefName: config-fina
-    envVariableName: TRACER_TYPE
-    sharedVarRefKey: TRACER_TYPE
 
 sharedEnvSecretVars:
 
@@ -106,11 +85,3 @@ sharedEnvSecretVars:
   - secretKeyRefName: common-vault
     secretKeyRefKey: VAULT_SECRET_ID_AI_AGENTS
     envVariableName: VAULT_SECRET_ID
-
-  - secretKeyRefName: fina-database-url
-    secretKeyRefKey: url # TODO add real values
-    envVariableName: FINA_DATABASE_URL
-
-  - secretKeyRefName: fina-mcp-api-key
-    secretKeyRefKey: apiKey # TODO add real values
-    envVariableName: FINA_MCP_API_KEY

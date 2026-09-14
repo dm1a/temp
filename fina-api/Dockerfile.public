@@ -15,7 +15,7 @@ COPY src ./src
 RUN uv sync --frozen --no-dev --no-editable
 
 FROM build AS test
-RUN uv sync --frozen --extra dev --no-editable
+RUN uv sync --frozen --no-editable
 COPY alembic.ini pytest.ini ./
 COPY alembic ./alembic
 COPY tests ./tests

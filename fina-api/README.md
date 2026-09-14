@@ -62,7 +62,7 @@ test that expects a variable to be genuinely unset.
 
 ```bash
 cp .env.example .env
-uv sync --extra dev
+uv sync
 uv run --env-file .env alembic upgrade head
 uv run --env-file .env uvicorn fina.main:create_app --factory --reload
 ```
@@ -530,8 +530,17 @@ containers. Run it from a host or CI runner with Python dependencies installed
 and a running Docker daemon with Docker Compose v2:
 
 ```bash
-uv sync --frozen --extra dev
+uv sync --frozen
 uv run pytest tests/e2e --run-e2e --strict-markers
+```
+
+On a machine with no path to the public internet, set `FINA_E2E_COMPOSE_FILE`
+so the suite builds [`Dockerfile`](Dockerfile) via
+[`compose.e2e.corporate.yaml`](compose.e2e.corporate.yaml) instead of
+`Dockerfile.public` via `compose.e2e.yaml`:
+
+```bash
+FINA_E2E_COMPOSE_FILE=compose.e2e.corporate.yaml uv run pytest tests/e2e --run-e2e --strict-markers
 ```
 
 The six E2E scenarios cover:
@@ -547,7 +556,8 @@ The six E2E scenarios cover:
   followed by recovery without reapplying migrations.
 
 The suite owns a unique Compose project defined in
-[`compose.e2e.yaml`](compose.e2e.yaml), with a fresh PostgreSQL volume and randomly
+[`compose.e2e.yaml`](compose.e2e.yaml) (or `compose.e2e.corporate.yaml`, above),
+with a fresh PostgreSQL volume and randomly
 assigned localhost ports. It builds the runtime image once, runs migrations once,
 resets only its own test data between scenarios, captures container logs on failure,
 and removes its containers, network, and volume afterward. It does not require

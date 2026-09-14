@@ -318,7 +318,7 @@ dependencies = [
     { name = "vault-secrets" },
 ]
 
-[package.optional-dependencies]
+[package.dev-dependencies]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -333,16 +333,19 @@ requires-dist = [
     { name = "audio-fetcher", editable = "packages/audio_fetcher" },
     { name = "dishka", specifier = ">=1,<2" },
     { name = "fastapi", specifier = ">=0.116,<1" },
-    { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.28,<1" },
     { name = "prometheus-client", specifier = ">=0.20,<1" },
     { name = "pydantic-settings", specifier = ">=2.10,<3" },
-    { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.1,<10" },
-    { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.12,<1" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = ">=2.0,<3" },
     { name = "uvicorn", specifier = ">=0.35,<1" },
     { name = "vault-secrets", editable = "packages/vault_secrets" },
 ]
-provides-extras = ["dev"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "httpx", specifier = ">=0.28,<1" },
+    { name = "pytest", specifier = ">=9.1,<10" },
+    { name = "ruff", specifier = ">=0.12,<1" },
+]
 
 [[package]]
 name = "greenlet"
