@@ -1,9 +1,11 @@
 # Corporate production build: uses the internal registry mirror and Nexus
 # PyPI proxy instead of public sources, for deployment inside the corporate
-# network. For local dev, testing, and this repo's own e2e suite
-# (compose.e2e.yaml / compose.test.yaml), use Dockerfile.public instead --
-# it pulls from public registries this file's hosts won't resolve outside
-# that network, and doesn't need any of the corporate-only pieces below.
+# network. For local dev and this repo's own e2e suite (compose.e2e.yaml),
+# use Dockerfile.public instead -- it pulls from public registries this
+# file's hosts won't resolve outside that network, and doesn't need any of
+# the corporate-only pieces below. On a machine with no path to the public
+# internet, run tests against this file's `test` stage instead (see
+# compose.test.corporate.yaml).
 #
 # Preserves everything Dockerfile.public guarantees: non-root user (uid
 # 10001, matching k8s/deployment.yaml's securityContext), a real venv
@@ -45,6 +47,20 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 COPY src ./src
 RUN --mount=type=cache,target=/root/.cache/uv \
     uv sync --frozen --no-dev --no-editable
+
+# Test runner, mirroring Dockerfile.public's `test` stage: same dev-extra
+# sync and pytest entrypoint, but built off this file's corporate `build`
+# stage so it works with no path to the public internet (see
+# compose.test.corporate.yaml). uv itself is already installed via the
+# Nexus proxy above, so the dev-extra sync below goes through the same
+# resolution path the --no-dev sync already relies on.
+FROM build AS test
+RUN uv sync --frozen --extra dev --no-editable
+COPY alembic.ini pytest.ini ./
+COPY alembic ./alembic
+COPY tests ./tests
+ENV PATH="/app/.venv/bin:$PATH"
+CMD ["pytest", "--strict-markers"]
 
 FROM cr.ci.sberinsur.local/dockerhub/library/python:3.12.13-slim-bookworm AS runtime
 

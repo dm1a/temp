@@ -1,0 +1,36 @@
+# Corporate-network equivalent of compose.test.yaml: builds Dockerfile's
+# `test` stage instead of Dockerfile.public's, and pulls postgres from the
+# same internal Docker Hub mirror Dockerfile already uses for python
+# (cr.ci.sberinsur.local/dockerhub/library/...), since plain `postgres:15-alpine`
+# isn't reachable without a path to the public internet. Use this file, not
+# compose.test.yaml, on a machine with no public internet access. Confirm the
+# mirror actually proxies postgres before relying on this -- Dockerfile's
+# comments only establish that it proxies python.
+#
+# See compose.e2e.yaml's comment -- pinned so this doesn't collide with it
+# or compose.test.yaml under the directory-derived default project name.
+name: fina-test-corporate
+
+services:
+  postgres:
+    image: cr.ci.sberinsur.local/dockerhub/library/postgres:15-alpine
+    environment:
+      POSTGRES_USER: fina_test
+      POSTGRES_PASSWORD: fina_test
+      POSTGRES_DB: postgres
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fina_test -d postgres"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+  tests:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: test
+    environment:
+      FINA_TEST_DATABASE_URL: postgresql+asyncpg://fina_test:fina_test@postgres:5432/postgres
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: ["sh", "-c", "ruff check . && ruff format --check . && pytest --strict-markers"]

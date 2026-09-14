@@ -511,6 +511,17 @@ docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-
 docker compose -f compose.test.yaml down --volumes
 ```
 
+On a machine with no path to the public internet (e.g. inside the corporate
+network), use [`compose.test.corporate.yaml`](compose.test.corporate.yaml)
+instead -- it builds [`Dockerfile`](Dockerfile)'s `test` stage and pulls
+postgres from the same internal registry mirror `Dockerfile` uses for python,
+rather than `Dockerfile.public` and public Docker Hub:
+
+```bash
+docker compose -f compose.test.corporate.yaml up --build --abort-on-container-exit --exit-code-from tests
+docker compose -f compose.test.corporate.yaml down --volumes
+```
+
 ### End-to-end tests
 
 [`tests/e2e/test_application.py`](tests/e2e/test_application.py) exercises the built
