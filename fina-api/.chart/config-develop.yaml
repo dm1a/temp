@@ -1,0 +1,23 @@
+config-gen:
+  fullnameOverride: "fina"
+
+  extraConfigMaps:
+    config-fina:
+      # === py_logs (логирование) ===
+      APP_NAME_ENV_LINK: "APP_NAME" # Ссылка на APP_NAME
+      APP_NAME: "fina" # Имя для логов (НЕ меняй при ренейме!)
+      PROJECT_CODE: "fina.dev" # TODO: Замени на свой код проекта
+      TRACER_TYPE: "dummy_manager" # TODO: Замени на свой тип трейсера
+      APP_LOG_LEVEL: "20"
+      LOG_HANDLERS: "console"
+
+      # === TODO: Добавь свои env vars ===
+      FINA_MAX_RETRY_ATTEMPTS: "5"
+      FINA_SQL_ECHO: "false"
+
+      # === Vault (только для K8s!) ===
+      VAULT_URL: "https://vault.dev.sberinsur.local"
+      VAULT_ENGINE: "ai"
+      VAULT_SECRET_PATH: "agent/product/{{ SERVICE_NAME }}"
+      VAULT_ROLE_ID: # TODO: add
+      VAULT_SECRET_ID: # TODO: add

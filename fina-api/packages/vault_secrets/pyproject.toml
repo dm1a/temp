@@ -1,0 +1,17 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vault-secrets"
+version = "0.1.0"
+description = "Stand-in for the internal corporate vault-secrets package, mirroring its shape."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2,<3",
+    "pydantic-settings>=2.10,<3",
+    "requests>=2,<3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vault_secrets"]

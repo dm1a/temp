@@ -1,0 +1,30 @@
+replicaCount: 1
+
+podDisruptionBudget: null
+
+imagePullSecrets:
+  - name: harbor
+
+nodeSelector: {}
+
+metrics:
+  enabled: true
+
+ingress:
+  enabled: true
+  ingressClassName: "nginx"
+  annotations:
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    nginx.ingress.kubernetes.io/enable-cors: "true"
+    nginx.ingress.kubernetes.io/cors-allow-methods: "GET, POST, PUT, PATCH, DELETE, OPTIONS"
+    nginx.ingress.kubernetes.io/cors-allow-origin: "*"
+    nginx.ingress.kubernetes.io/cors-allow-credentials: "true"
+    nginx.ingress.kubernetes.io/x-forwarded-prefix: "/"
+  hosts:
+    - host: "fina.dev.sberinsur.local"
+      paths:
+        - /api/v1
+      servicePortName: http
+  tls: []
+
+existingConfigMapFiles: {}

@@ -2,10 +2,10 @@ import asyncio
 from datetime import datetime, timedelta
 from uuid import uuid4
 
-from fina_api.config import Settings
-from fina_api.domain.clock import APPLICATION_TIMEZONE
-from fina_api.runtime import RuntimeState
-from fina_api.services.calls_discovery import PostgresCallsDiscoveryScheduler
+from fina.config import Settings
+from fina.domain.clock import APPLICATION_TIMEZONE
+from fina.runtime import RuntimeState
+from fina.services.calls_discovery import PostgresCallsDiscoveryScheduler
 from tests.conftest import application_client, make_test_application
 
 
@@ -35,15 +35,18 @@ class CapturingDiscoveryRuns:
     def __init__(self) -> None:
         self.initial_window_from: datetime | None = None
         self.window_to: datetime | None = None
+        self.backfill_from: datetime | None = None
 
     async def enqueue_next(
         self,
         *,
         initial_window_from: datetime,
         window_to: datetime,
+        backfill_from: datetime | None = None,
     ) -> object:
         self.initial_window_from = initial_window_from
         self.window_to = window_to
+        self.backfill_from = backfill_from
         return uuid4()
 
 
@@ -75,6 +78,7 @@ def test_first_discovery_uses_configured_start_and_fixed_plus_three_timezone() -
         now = datetime(2026, 9, 3, 12, 30, tzinfo=APPLICATION_TIMEZONE)
         repository = CapturingDiscoveryRuns()
         settings = Settings(
+            database_url="postgresql+asyncpg://test:test@localhost/test",
             mcp_api_key="test-key",
             discovery_start_at="2026-09-01T00:00:00Z",
         )
@@ -95,6 +99,7 @@ def test_first_discovery_uses_configured_start_and_fixed_plus_three_timezone() -
             tzinfo=APPLICATION_TIMEZONE,
         )
         assert repository.window_to == now
+        assert repository.backfill_from == settings.discovery_start_at
 
     asyncio.run(scenario())
 
@@ -107,7 +112,10 @@ def test_first_discovery_falls_back_to_application_start_time() -> None:
         scheduler = PostgresCallsDiscoveryScheduler(
             connection=StubConnection(),  # type: ignore[arg-type]
             discovery_runs=repository,  # type: ignore[arg-type]
-            settings=Settings(mcp_api_key="test-key"),
+            settings=Settings(
+                database_url="postgresql+asyncpg://test:test@localhost/test",
+                mcp_api_key="test-key",
+            ),
             runtime=RuntimeState(started=True, started_at=started_at),
             clock=FixedClock(now),
         )
@@ -115,5 +123,6 @@ def test_first_discovery_falls_back_to_application_start_time() -> None:
         assert await scheduler.schedule() is True
         assert repository.initial_window_from == started_at
         assert repository.window_to == now
+        assert repository.backfill_from is None
 
     asyncio.run(scenario())

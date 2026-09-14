@@ -39,7 +39,7 @@ def test_health_endpoints_remain_public() -> None:
         application = make_test_application()
 
         async with application_client(application) as client:
-            response = await client.get("/internal/health/live")
+            response = await client.get("/probes/healthz")
             assert response.status_code == 204
 
     asyncio.run(scenario())

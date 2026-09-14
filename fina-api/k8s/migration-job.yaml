@@ -1,0 +1,55 @@
+# Run once, before rolling out a Deployment that expects the schema
+# revision this Job applies. Never run migrations from the app's own
+# startup command -- see README's "Container deployment".
+#
+# Jobs are immutable: the name is suffixed with the target revision so
+# each schema-changing release gets its own Job object instead of trying
+# to edit/rerun a completed one. See k8s/README.md's maintenance
+# procedure for the full rollout order this depends on.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: fina-migrate-0001-initial-schema
+  labels:
+    app.kubernetes.io/name: fina
+    app.kubernetes.io/component: migration
+spec:
+  backoffLimit: 2
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fina
+        app.kubernetes.io/component: migration
+    spec:
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: migrate
+          image: fina:latest # pin to the exact tag being rolled out
+          command: ["alembic", "upgrade", "head"]
+          env:
+            # DatabaseSettings only -- this Job must never be given
+            # fina-mcp-api-key; alembic/env.py never constructs the full
+            # Settings, only DatabaseSettings.
+            - name: FINA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fina-database-url
+                  key: url
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi

@@ -1,0 +1,102 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: fina
+  labels:
+    app.kubernetes.io/name: fina
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      # No capacity dip during a routine (non-schema-changing) rollout:
+      # a replacement pod must be Ready before an old one is removed.
+      maxUnavailable: 0
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: fina
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: fina
+    spec:
+      # Budget: 5s preStop + 5s HTTP drain + 40s worker grace + 10s margin.
+      # Workers stop polling as soon as SIGTERM arrives, while HTTP drains.
+      terminationGracePeriodSeconds: 60
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+      containers:
+        - name: fina
+          image: fina:latest # pin to an exact tag in a real rollout
+          ports:
+            - name: http
+              containerPort: 8000
+            - name: management
+              containerPort: 9000
+          envFrom:
+            - configMapRef:
+                name: fina-config
+          env:
+            - name: FINA_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: fina-database-url
+                  key: url
+            - name: FINA_MCP_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: fina-mcp-api-key
+                  key: apiKey
+          lifecycle:
+            preStop:
+              exec:
+                command: ["sleep", "5"]
+          # startupProbe gates liveness/readiness until the process has
+          # bound both ports and reached the database with the expected
+          # schema revision -- covers first boot and a slow/unreachable
+          # database without the (tighter) liveness/readiness timings
+          # flapping or restarting the container prematurely.
+          startupProbe:
+            httpGet:
+              path: /probes/ready
+              port: management
+            periodSeconds: 2
+            failureThreshold: 30
+          # Shallow, dependency-free -- only catches the process itself
+          # being hung or deadlocked, never a database blip (that's
+          # readiness's job; restarting the container wouldn't fix a
+          # database problem anyway).
+          livenessProbe:
+            httpGet:
+              path: /probes/healthz
+              port: management
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Gates Service traffic and rolling-update progress: fails while
+          # draining (shutdown started) or if the database is unreachable
+          # or not on the exact schema revision this image expects.
+          readinessProbe:
+            httpGet:
+              path: /probes/ready
+              port: management
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            # Starting point only -- tune from real request volume and
+            # profiling, not from these numbers.
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 1
+              memory: 512Mi

@@ -1,0 +1,15 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "audio-fetcher"
+version = "0.1.0"
+description = "Stand-in for the not-yet-published MTS AudioFetcher SDK, mirroring its draft shape."
+requires-python = ">=3.12"
+dependencies = [
+    "pydantic>=2,<3",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/audio_fetcher"]

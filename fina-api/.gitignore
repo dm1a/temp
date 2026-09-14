@@ -1,9 +1,42 @@
-.env
-.pytest_cache/
-.ruff_cache/
+# Deny by default; only what's explicitly allowed below gets tracked.
+*
+
+# Let git look inside every directory so the allow-rules further down can
+# match files within them -- "*" above would otherwise stop traversal at
+# the first level.
+!*/
+
+# Never track these, even though "!*/" above re-allows traversal into them.
+# (A directory-level ignore here blocks descending into it at all, so
+# nothing inside can be re-allowed by a later pattern -- that's deliberate.)
 .venv/
 __pycache__/
-*.py[cod]
+.pytest_cache/
+.ruff_cache/
 *.egg-info/
 dist/
+build/
 
+# Secrets: never tracked, regardless of any pattern below.
+.env
+
+# Allowed file types, at any depth.
+!*.py
+!*.pyi
+!*.toml
+!*.ini
+!*.cfg
+!*.yaml
+!*.yml
+!*.md
+!*.mako
+!*.json
+!*.lock
+!*.txt
+
+# Specific dotfiles/extensionless files that should be tracked.
+!.gitignore
+!.dockerignore
+!.env.example
+!Dockerfile
+!Dockerfile.public

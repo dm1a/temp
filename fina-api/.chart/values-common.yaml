@@ -1,0 +1,116 @@
+replicaCount: 2
+
+podDisruptionBudget: null
+
+imagePullSecrets:
+  - name: harbor
+
+nodeSelector: {}
+  # node-role.kubernetes.io/worker: "true"
+
+metrics:
+  enabled: true
+
+service:
+  type: ClusterIP
+  ports:
+    - name: http
+      port: 8000
+      containerPort: 8000
+    - name: management
+      port: 9000
+      containerPort: 9000
+
+resources:
+  limits:
+    cpu: 1
+    memory: 1Gi
+  requests:
+    cpu: 256m
+    memory: 500Mi
+
+readinessProbe:
+  port: management
+  path: /probes/ready
+  times:
+    initialDelaySeconds: 10
+    periodSeconds: 10
+    timeoutSeconds: 3
+    failureThreshold: 3
+
+livenessProbe:
+  port: management
+  path: /probes/healthz
+  times:
+    initialDelaySeconds: 15
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+terminationGracePeriodSeconds: 60
+
+gracefulShutdown:
+  enable: true
+  preStopSleepSeconds: 5
+
+# Vault credentials — из Secret (common-vault)
+
+sharedEnvVars:
+  - sharedVarRefName: config-fina
+    sharedVarRefKey: FINA_MAX_RETRY_ATTEMPTS
+    envVariableName: FINA_MAX_RETRY_ATTEMPTS
+
+  - sharedVarRefName: config-fina
+    sharedVarRefKey: FINA_SQL_ECHO
+    envVariableName: FINA_SQL_ECHO
+
+  - sharedVarRefName: config-fina
+    envVariableName: APP_NAME_ENV_LINK
+    sharedVarRefKey: APP_NAME_ENV_LINK
+
+  # TODO: remove env. var. that are present in config-...yaml
+  - sharedVarRefName: config-fina
+    envVariableName: APP_NAME
+    sharedVarRefKey: APP_NAME
+
+  - sharedVarRefName: config-fina
+    envVariableName: APP_LOG_LEVEL
+    sharedVarRefKey: APP_LOG_LEVEL
+
+  - sharedVarRefName: config-fina
+    envVariableName: LOG_HANDLERS
+    sharedVarRefKey: LOG_HANDLERS
+
+  - sharedVarRefName: config-fina
+    envVariableName: LOGSTASH_LOG_HOST
+    sharedVarRefKey: LOGSTASH_LOG_HOST
+
+  - sharedVarRefName: config-fina
+    envVariableName: LOGSTASH_LOG_PORT
+    sharedVarRefKey: LOGSTASH_LOG_PORT
+
+  - sharedVarRefName: config-fina
+    envVariableName: PROJECT_CODE
+    sharedVarRefKey: PROJECT_CODE
+
+  - sharedVarRefName: config-fina
+    envVariableName: TRACER_TYPE
+    sharedVarRefKey: TRACER_TYPE
+
+sharedEnvSecretVars:
+
+  - secretKeyRefName: common-vault
+    secretKeyRefKey: VAULT_ROLE_ID_AI_AGENTS
+    envVariableName: VAULT_ROLE_ID
+
+  - secretKeyRefName: common-vault
+    secretKeyRefKey: VAULT_SECRET_ID_AI_AGENTS
+    envVariableName: VAULT_SECRET_ID
+
+  - secretKeyRefName: fina-database-url
+    secretKeyRefKey: url # TODO add real values
+    envVariableName: FINA_DATABASE_URL
+
+  - secretKeyRefName: fina-mcp-api-key
+    secretKeyRefKey: apiKey # TODO add real values
+    envVariableName: FINA_MCP_API_KEY

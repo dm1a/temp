@@ -2,7 +2,7 @@ import asyncio
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fina_api.repositories.types import TranscriptRecord
+from fina.repositories.types import TranscriptRecord
 from tests.conftest import MCP_AUTH_HEADERS, application_client, make_test_application
 
 
