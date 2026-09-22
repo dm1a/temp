@@ -3,7 +3,6 @@ from datetime import datetime
 
 import pytest
 from audio_fetcher import (
-    UTC3,
     AudioFetchError,
     AudioFetchRequest,
     AudioFetchResponse,
@@ -12,6 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 
 from fina.adapters.audio_fetcher_adapter import AudioFetcherAdapter
 from fina.domain.audio_fetch import FetchCallInput, FetchCallResult
+from fina.domain.clock import APPLICATION_TIMEZONE as UTC3
 from fina.domain.enums import CallDirection
 from tests.integration.helpers import ADVISOR, CLIENT, seed_call
 

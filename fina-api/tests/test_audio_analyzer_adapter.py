@@ -2,7 +2,6 @@ import asyncio
 from datetime import date, datetime
 from uuid import uuid4
 
-from audio_analyzer import UTC3
 from audio_analyzer import AnalysisArtifacts as RawAnalysisArtifacts
 from audio_analyzer import AnalyzeError as RawAnalyzeError
 from audio_analyzer import AnalyzeResult as RawAnalyzeResult
@@ -25,6 +24,7 @@ from fina.domain.audio_analysis import (
     SendOrderError,
     SendOrderResult,
 )
+from fina.domain.clock import APPLICATION_TIMEZONE as UTC3
 from fina.domain.enums import OrderType
 
 TASK_ID = uuid4()

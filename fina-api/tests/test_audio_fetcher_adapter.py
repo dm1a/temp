@@ -2,7 +2,6 @@ import uuid
 from datetime import datetime
 
 from audio_fetcher import (
-    UTC3,
     AudioFetchError,
     AudioFetchResponse,
     AudioMetaFetchItem,
@@ -10,6 +9,7 @@ from audio_fetcher import (
 
 from fina.adapters.audio_fetcher_adapter import AudioFetcherAdapter
 from fina.domain.audio_fetch import DiscoveredCall, FetchCallError, FetchCallResult
+from fina.domain.clock import APPLICATION_TIMEZONE as UTC3
 from fina.domain.enums import CallDirection
 
 TASK_ID = uuid.uuid4()
