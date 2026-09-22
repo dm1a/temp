@@ -80,10 +80,9 @@ def _build_management_app(container: AsyncContainer) -> FastAPI:
 
 async def run() -> None:
     settings = get_settings()
-    # Fail before binding either port if processing mode can't actually run.
-    audio_fetcher, audio_analyzer = resolve_audio_adapters(settings.api_mode)
-
     container = build_container(settings)
+    # Fail before binding either port if processing mode can't actually run.
+    audio_fetcher, audio_analyzer = await resolve_audio_adapters(settings, container)
 
     routes_server = _CoordinatedServer(
         uvicorn.Config(

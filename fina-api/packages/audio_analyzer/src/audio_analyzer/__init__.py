@@ -2,15 +2,17 @@
 
 The real package is not published or installable yet, so this workspace
 package stands in for it: enough of the draft to type-check and unit-test
-audio_analyzer_adapter.py against. Delete this package (and the matching
-workspace member/dependency entries in the root pyproject.toml) and depend on
-the real package once it exists. analyze(), client_profile(), and
-send_order() are all mirrored.
+audio_analyzer_adapter.py against. FinaAnalyzerClient's real implementation
+(the actual S3/LiteLLM calls) isn't visible from here, so every method
+raises NotImplementedError rather than guessing at real request/response
+shapes -- see vault_secrets.client.VaultClient for the same pattern. Delete
+this package (and the matching workspace member/dependency entries in the
+root pyproject.toml) and depend on the real package once it exists.
 """
 
 import enum
 from datetime import date, datetime, timedelta, timezone
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal
 from uuid import UUID
 
 from pydantic import (
@@ -228,28 +230,40 @@ class S3Params(BaseModel):
     s3_cert_path: str = Field(description="путь до серта")
 
 
-class FinaAnalyzerClient(Protocol):
+_NOT_IMPLEMENTED = (
+    "FinaAnalyzerClient is a local stand-in for the not-yet-published FINA "
+    "Analyzer SDK; it cannot actually analyze calls. Replace it with the "
+    "real package before running with FINA_API_MODE=false."
+)
+
+
+class FinaAnalyzerClient:
     """The external FINA Analyzer SDK client (draft), as the adapter consumes it."""
 
     def __init__(
         self,
         s3_params: S3Params,
         litellm_params: LiteLLMParams,
-    ) -> None: ...
+    ) -> None:
+        self.s3_params = s3_params
+        self.litellm_params = litellm_params
 
     async def analyze(
         self,
         task_id: UUID,
         input_data: AnalyzeInput,
-    ) -> AnalyzeResult | AnalyzeError: ...
+    ) -> AnalyzeResult | AnalyzeError:
+        raise NotImplementedError(_NOT_IMPLEMENTED)
 
     async def client_profile(
         self,
         task_id: UUID,
         input_data: list[DialogDescription],
-    ) -> ClientProfile | ErrorClientProfile: ...
+    ) -> ClientProfile | ErrorClientProfile:
+        raise NotImplementedError(_NOT_IMPLEMENTED)
 
     async def send_order(
         self,
         input_data: SendOrderInput,
-    ) -> ErrorSendOrder | None: ...
+    ) -> ErrorSendOrder | None:
+        raise NotImplementedError(_NOT_IMPLEMENTED)

@@ -63,7 +63,10 @@ def test_shutdown_stops_workers_before_waiting_for_http(monkeypatch, trigger) ->
 
         settings = Settings(database_url="postgresql+asyncpg://unused/db", mcp_api_key="test")
         monkeypatch.setattr(entrypoint, "get_settings", lambda: settings)
-        monkeypatch.setattr(entrypoint, "resolve_audio_adapters", lambda mode: (object(), None))
+        async def fake_resolve_audio_adapters(settings, container):
+            return object(), None
+
+        monkeypatch.setattr(entrypoint, "resolve_audio_adapters", fake_resolve_audio_adapters)
         monkeypatch.setattr(entrypoint, "build_container", lambda settings: container)
         monkeypatch.setattr(entrypoint, "_build_routes_app", lambda container: FastAPI())
         monkeypatch.setattr(entrypoint, "_build_management_app", lambda container: FastAPI())

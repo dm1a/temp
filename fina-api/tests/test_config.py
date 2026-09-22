@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 from vault_secrets import _vault_tls_verify
 
-from fina.config import DatabaseSettings, SecretSettings, Settings, get_settings
+from fina.config import DatabaseSettings, Settings, get_settings
 
 
 @pytest.fixture(autouse=True)
@@ -88,7 +88,7 @@ def test_settings_requires_mcp_api_key(monkeypatch) -> None:
     assert "postgresql+asyncpg://u:p@db-host:5432/dbname" not in str(excinfo.value)
 
 
-@pytest.mark.parametrize("model", [Settings, SecretSettings, DatabaseSettings])
+@pytest.mark.parametrize("model", [Settings, DatabaseSettings])
 def test_settings_errors_hide_unparsed_input(model) -> None:
     with pytest.raises(ValidationError) as excinfo:
         model.model_validate({"mcp_api_key": {"secret": "private-value-canary"}})

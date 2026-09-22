@@ -26,8 +26,8 @@ Intentionally deferred until their contracts are finalized:
 - queue worker loops and retry-policy orchestration;
 - structured order and accumulated client-profile queries.
 
-Vault integration is wired in (`vault_secrets`, layered into `Settings` via
-`SecretSettings`) but only usable once the corporate network's real
+Vault integration is wired in (`vault_secrets`, layered directly into
+`Settings`) but only usable once the corporate network's real
 `vault-secrets` package replaces the local stand-in in `packages/vault_secrets`
 -- see that package's docstring, and "Configuration" below.
 
@@ -59,6 +59,15 @@ configuration only: `database_url`, `sql_echo`; used standalone by migration
 jobs, which need no secrets) are kept as separate classes for exactly that
 reason: so migrations, and anything else that only needs database
 connectivity, never have to satisfy the application's secret requirements.
+`Settings` also carries the FINA Analyzer and MTS AudioFetcher SDK
+configuration (`s3_*`, `llm_*`, `stt_name`, `mts_secret_string` --
+`s3_secret_key` doubles as the fetcher's own S3 secret too); it's optional
+in `Settings` itself, but `resolve_audio_adapters()` requires it once
+`FINA_API_MODE=false`, to build `FinaAnalyzerClient`/`MtsAudioFetcherClient`
+(see [`processing_mode.py`](src/fina/processing_mode.py)). Those clients are
+still local stand-ins for the not-yet-published real SDKs: every method on
+them raises `NotImplementedError` if actually called, so a worker touching
+one fails loudly per job rather than silently reporting fake success.
 
 This settings machinery itself never reads a `.env` file -- `.env` is loaded
 by the launch command instead (`uv run --env-file .env ...`, below), so a
@@ -110,14 +119,18 @@ what gets a grace period.
 - `true` (the default, and the only mode this application actually runs in
   today): routes and management are served; no background workers start.
 - `false`: also starts the discovery/fetch/analysis/client-profile/
-  send-order workers. This requires real `AudioFetcher`/`AudioAnalyzer` SDK
-  clients, which don't exist yet -- `packages/audio_fetcher` and
-  `packages/audio_analyzer` are local stand-ins for the not-yet-published
-  real SDKs (see their docstrings) and cannot back real workers. Setting
-  `FINA_API_MODE=false` today therefore fails immediately, before either
-  port binds, with a clear error explaining why -- not a silent fallback
-  to API-only behavior, and not a crash deep inside a worker loop the
-  first time it touches a stand-in client.
+  send-order workers, backed by `AudioFetcherAdapter`/`AudioAnalyzerAdapter`
+  wrapping `MtsAudioFetcherClient`/`FinaAnalyzerClient` built from the
+  `s3_*`/`llm_*`/`mts_secret_string` settings above. A setting needed to
+  build those clients but left unset fails immediately, before either port
+  binds, with a clear error explaining why -- not a silent fallback to
+  API-only behavior. `packages/audio_fetcher` and `packages/audio_analyzer`
+  are still local stand-ins for the not-yet-published real SDKs (see their
+  docstrings), though: every method on the clients they build raises
+  `NotImplementedError` if actually called, so a worker fails loudly per
+  job rather than silently reporting fake success -- not a crash deep
+  inside a worker loop either, since it happens the moment that job runs,
+  with the same clear error.
 
 ## Health endpoints
 

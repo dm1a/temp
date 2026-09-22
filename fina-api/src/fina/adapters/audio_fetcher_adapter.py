@@ -11,6 +11,7 @@ this adapter looks that data up itself from the calls table.
 import logging
 import time
 from datetime import datetime
+from typing import Protocol
 
 from audio_fetcher import (
     AudioFetchError,
@@ -18,7 +19,6 @@ from audio_fetcher import (
     AudioFetchResponse,
     AudioMetaFetchItem,
     AudioMetaFetchRequest,
-    MtsAudioFetcherClient,
 )
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -35,6 +35,20 @@ from fina.domain.enums import CallDirection
 from fina.repositories.calls import CallRepository
 
 logger = logging.getLogger(__name__)
+
+
+class MtsAudioFetcherClient(Protocol):
+    """What this adapter actually calls on the MTS AudioFetcher SDK client --
+    independent of audio_fetcher.MtsAudioFetcherClient's own __init__, so test
+    doubles need not match its constructor to satisfy this structurally."""
+
+    async def list_available_calls(
+        self, request: AudioMetaFetchRequest
+    ) -> list[AudioMetaFetchItem]: ...
+
+    async def fetch_and_store(
+        self, request: AudioFetchRequest
+    ) -> AudioFetchResponse | AudioFetchError: ...
 
 
 class AudioFetcherAdapter:

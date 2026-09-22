@@ -2,15 +2,19 @@
 
 The real package is not published or installable yet, so this workspace
 package stands in for it: enough of the draft to type-check and unit-test
-audio_fetcher_adapter.py against. Delete this package (and the matching
-workspace member/dependency entries in the root pyproject.toml) and depend on
-the real package once it exists. Field descriptions are dropped here since
-they belong to the real package, not this stand-in.
+audio_fetcher_adapter.py against. MtsAudioFetcherClient's real
+implementation (the actual MTS/S3 calls) isn't visible from here, so every
+method raises NotImplementedError rather than guessing at real
+request/response shapes -- see vault_secrets.client.VaultClient for the
+same pattern. Delete this package (and the matching workspace
+member/dependency entries in the root pyproject.toml) and depend on the
+real package once it exists. Field descriptions are dropped here since they
+belong to the real package, not this stand-in.
 """
 
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Literal, Protocol
+from typing import Annotated, Literal
 
 from pydantic import (
     AfterValidator,
@@ -18,6 +22,7 @@ from pydantic import (
     BeforeValidator,
     Field,
     PositiveInt,
+    SecretStr,
     StringConstraints,
 )
 
@@ -97,13 +102,30 @@ class AudioFetchError(BaseModel):
     need_retry: bool
 
 
-class MtsAudioFetcherClient(Protocol):
+_NOT_IMPLEMENTED = (
+    "MtsAudioFetcherClient is a local stand-in for the not-yet-published MTS "
+    "AudioFetcher SDK; it cannot actually fetch calls. Replace it with the "
+    "real package before running with FINA_API_MODE=false."
+)
+
+
+class MtsAudioFetcherClient:
     """The external MTS AudioFetcher SDK client (draft), as the adapter consumes it."""
+
+    def __init__(
+        self,
+        s3_secret_string: SecretStr,
+        mts_secret_string: SecretStr,
+    ) -> None:
+        self.s3_secret_string = s3_secret_string
+        self.mts_secret_string = mts_secret_string
 
     async def list_available_calls(
         self, request: AudioMetaFetchRequest
-    ) -> list[AudioMetaFetchItem]: ...
+    ) -> list[AudioMetaFetchItem]:
+        raise NotImplementedError(_NOT_IMPLEMENTED)
 
     async def fetch_and_store(
         self, request: AudioFetchRequest
-    ) -> AudioFetchResponse | AudioFetchError: ...
+    ) -> AudioFetchResponse | AudioFetchError:
+        raise NotImplementedError(_NOT_IMPLEMENTED)

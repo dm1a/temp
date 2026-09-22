@@ -5,6 +5,7 @@ analyze(), client_profile(), and send_order() are all implemented.
 
 import logging
 import time
+from typing import Protocol
 from uuid import UUID
 
 from audio_analyzer import (
@@ -27,9 +28,6 @@ from audio_analyzer import (
 )
 from audio_analyzer import (
     ErrorSendOrder as RawErrorSendOrder,
-)
-from audio_analyzer import (
-    FinaAnalyzerClient,
 )
 from audio_analyzer import (
     OrderType as RawOrderType,
@@ -63,6 +61,22 @@ logger = logging.getLogger(__name__)
 # The provider's payloads (transcripts, summaries, dialog descriptions,
 # customer profiles, order details) never reach a log record -- see README's
 # "Logging and metrics".
+
+
+class FinaAnalyzerClient(Protocol):
+    """What this adapter actually calls on the FINA Analyzer SDK client --
+    independent of audio_analyzer.FinaAnalyzerClient's own __init__, so test
+    doubles need not match its constructor to satisfy this structurally."""
+
+    async def analyze(
+        self, task_id: UUID, input_data: RawAnalyzeInput
+    ) -> RawAnalyzeResult | RawAnalyzeError: ...
+
+    async def client_profile(
+        self, task_id: UUID, input_data: list[RawDialogDescription]
+    ) -> RawClientProfile | RawErrorClientProfile: ...
+
+    async def send_order(self, input_data: RawSendOrderInput) -> RawErrorSendOrder | None: ...
 
 
 class AudioAnalyzerAdapter:
