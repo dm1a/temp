@@ -1,9 +1,28 @@
+# =============================================================================
+# LOCAL vs CORPORATE
+#
+# This file has two modes. Every section below is either unpaired (shared by
+# both, left alone) or comes as a LOCAL/CORPORATE pair: LOCAL is active
+# (uncommented) by default, for dev/testing outside the corporate network,
+# using the audio_fetcher/audio_analyzer/vault_secrets local stand-in
+# packages. To switch to the corporate PC's setup: for every pair below,
+# comment out the LOCAL block and uncomment the matching CORPORATE block.
+# Search for "LOCAL:" / "CORPORATE:" to find every pair. Also remember:
+# packages/vault_secrets/ itself must be deleted on the corporate PC (see
+# its own docstring) -- commenting this file alone isn't enough for that one.
+# =============================================================================
+
 [project]
 name = "fina"
 version = "0.1.0"
 description = "FinaAPI modular monolith"
 readme = "README.md"
 requires-python = ">=3.12"
+# CORPORATE: adds package authors metadata; no local equivalent.
+# authors = [{name = "AI Team"}]
+
+# LOCAL: audio-analyzer/audio-fetcher/vault-secrets are all local stand-in
+# workspace packages (see [tool.uv.workspace]/[tool.uv.sources] below).
 dependencies = [
     "alembic>=1.16,<2",
     "asyncpg>=0.30,<1",
@@ -17,21 +36,67 @@ dependencies = [
     "uvicorn>=0.35,<1",
     "vault-secrets",
 ]
+# CORPORATE: audio_fetcher/audio_analyzer stay local workspace members;
+# py-logs (vendored wheel) and vault-secrets>=0.3.0 (real, from Nexus)
+# replace their local stand-ins.
+# dependencies = [
+#     "audio_fetcher",
+#     "audio_analyzer",
+#     "py-logs",
+#     "vault-secrets>=0.3.0",
+#
+#     "alembic>=1.16,<2",
+#     "asyncpg>=0.30,<1",
+#     "dishka>=1,<2",
+#     "fastapi>=0.116,<1",
+#     "prometheus-client>=0.20,<1",
+#     "pydantic-settings>=2.10,<3",
+#     "sqlalchemy[asyncio]>=2.0,<3",
+#     "uvicorn>=0.35,<1",
+# ]
 
 [dependency-groups]
+# LOCAL:
 dev = [
     "httpx>=0.28,<1",
     "pytest>=9.1,<10",
     "ruff>=0.12,<1",
 ]
+# CORPORATE: adds pytest-asyncio; looser/newer pins on pytest and ruff.
+# dev = [
+#     "httpx>=0.28,<1",
+#     "pytest>=9.1.1",
+#     "pytest-asyncio>=1.4.0",
+#     "ruff>=0.16.5",
+# ]
+
+# CORPORATE only -- no local equivalent. Locally and in both Dockerfiles the
+# app runs via `python -m fina`; this adds a `fina` console script as well.
+# [project.scripts]
+# fina = "fina:main"
 
 [tool.uv]
 # Corporate Nexus (nexus.dev.sberinsur.local) presents a cert signed by an
 # internal root CA the build environment doesn't trust, so plain `uv sync`
 # fails with "unknown certificate issuer". Scoped to this one internal host
-# only -- uv still verifies certs for every other host.
+# only -- uv still verifies certs for every other host. Needed in both modes.
 allow-insecure-host = ["nexus.dev.sberinsur.local"]
+# CORPORATE: also trust the OS certificate store -- uv's own bundled cert
+# list doesn't pick up a newly-trusted CA otherwise, see allow-insecure-host
+# above -- and resolve packages via the internal Nexus mirrors instead of
+# public PyPI.
+# system-certs = true
+#
+# [[tool.uv.index]]
+# url = "https://nexus.dev.sberinsur.local/repository/pip3-hosted/simple"
+#
+# [[tool.uv.index]]
+# name = "nexus"
+# url = "https://developer:developer@nexus.dev.sberinsur.local/repository/pip3-proxy/simple"
+# default = true
 
+# LOCAL: all three stand-ins (audio_fetcher, audio_analyzer, vault_secrets)
+# are local workspace packages.
 [tool.uv.workspace]
 members = ["packages/*"]
 
@@ -39,6 +104,22 @@ members = ["packages/*"]
 audio-analyzer = { workspace = true }
 audio-fetcher = { workspace = true }
 vault-secrets = { workspace = true }
+
+# CORPORATE: packages/vault_secrets/ is deleted entirely (not just
+# commented out here -- see its own docstring), leaving only
+# audio_fetcher/audio_analyzer as local workspace members; py-logs comes
+# from a vendored wheel; vault-secrets becomes a normal Nexus-resolved
+# dependency (see the corporate `dependencies` block above).
+# [tool.uv.workspace]
+# members = [
+#     "packages/audio_fetcher",
+#     "packages/audio_analyzer",
+# ]
+#
+# [tool.uv.sources]
+# py-logs = { path = "packages/py_logs-2.10.3-py3-none-any.whl" }
+# audio_fetcher = { workspace = true }
+# audio_analyzer = { workspace = true }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/fina"]

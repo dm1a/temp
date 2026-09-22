@@ -40,8 +40,15 @@ prefix for the application itself; two other, unrelated things happen to look
 similar and are documented here to avoid confusion:
 
 - `VAULT_*` variables (`VAULT_URL`, `VAULT_ROLE_ID`, `VAULT_SECRET_ID`,
-  `VAULT_ENGINE`, `VAULT_SECRET_PATH`) are an external system's own naming
-  convention, read directly by the `vault_secrets` package -- never `FINA_`-prefixed.
+  `VAULT_ENGINE`, `VAULT_SECRET_PATH`, `VAULT_CA_BUNDLE`) are an external
+  system's own naming convention, read directly by the `vault_secrets`
+  package -- never `FINA_`-prefixed. `VAULT_CA_BUNDLE` is optional and
+  independent of the other five: unset verifies the Vault server's TLS
+  certificate against the standard CA bundle; a file path verifies against
+  that CA bundle instead (the normal case, since the corporate Vault serves
+  a certificate from an internal CA); the literal string `false` disables
+  verification entirely, for local testing against a self-signed dev Vault
+  only -- never in a real deployment.
 - `FINA_TEST_DATABASE_URL` is the integration-test harness's own variable
   (see "Tests" below), read directly via `os.environ`. It is unrelated to
   `Settings` despite the shared `FINA_` text.

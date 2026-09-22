@@ -1,9 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: fina-config
-  labels:
-    app.kubernetes.io/name: fina
-data:
-  FINA_MAX_RETRY_ATTEMPTS: "5"
-  FINA_SQL_ECHO: "false"

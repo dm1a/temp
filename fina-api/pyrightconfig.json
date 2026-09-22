@@ -1,6 +1,11 @@
 {
   "include": ["src", "packages", "tests", "alembic"],
-  "extraPaths": ["."],
+  "extraPaths": [
+    "./src",
+    "./packages/audio_fetcher/src",
+    "./packages/audio_analyzer/src",
+    "./packages/vault_secrets/src"
+  ],
   "venvPath": ".",
   "venv": ".venv",
   "pythonVersion": "3.12",

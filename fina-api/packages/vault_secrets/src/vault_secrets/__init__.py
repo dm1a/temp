@@ -38,13 +38,24 @@ class VaultSecretService:
 
 
 class VaultAuthService:
-    """Vault authentication service."""
+    """Vault authentication service.
 
-    def __init__(self, *, vault_url: str) -> None:
+    verify follows requests.Session.verify's own contract: True (default) to
+    verify against the standard CA bundle, a file path to verify against a
+    custom one (the corporate Vault serves a certificate from an internal
+    CA, so this is the normal case in production -- see VAULT_CA_BUNDLE),
+    or False to disable verification entirely. Disabling it is an escape
+    hatch for local testing against a self-signed dev Vault, not something
+    to do in a real deployment.
+    """
+
+    def __init__(self, *, vault_url: str, verify: bool | str = True) -> None:
         self._vault_url = vault_url
+        self._verify = verify
 
     def __enter__(self) -> "VaultAuthService":
         self._session = requests.Session()
+        self._session.verify = self._verify
         self._vault = client.VaultClient(session=self._session, base_url=self._vault_url)
         return self
 
@@ -92,6 +103,20 @@ class VaultSecretSource(pydantic_settings.EnvSettingsSource):
         return f"{self.__class__.__name__}(vault_secrets={self.vault_secrets})"
 
 
+def _vault_tls_verify() -> bool | str:
+    """VAULT_CA_BUNDLE is optional and unrelated to whether VAULT_URL is set
+    at all: unset means verify with the standard CA bundle (True); the
+    corporate Vault normally needs a path to its internal CA bundle here
+    instead. The literal string "false" disables verification entirely --
+    only for local testing against a self-signed dev Vault."""
+    value = os.environ.get("VAULT_CA_BUNDLE")
+    if value is None:
+        return True
+    if value.strip().lower() == "false":
+        return False
+    return value
+
+
 class VaultSecretSettings(pydantic_settings.BaseSettings):
     """Mix in alongside your other BaseSettings bases to layer Vault-read
     secrets in as a settings source. A no-op (behaves exactly like plain
@@ -109,7 +134,7 @@ class VaultSecretSettings(pydantic_settings.BaseSettings):
     ) -> tuple[pydantic_settings.PydanticBaseSettingsSource, ...]:
         vault_url = os.environ.get("VAULT_URL")
         if vault_url:
-            with VaultAuthService(vault_url=vault_url) as vault_auth:
+            with VaultAuthService(vault_url=vault_url, verify=_vault_tls_verify()) as vault_auth:
                 vault_secret_service = vault_auth.login(
                     role_id=os.environ["VAULT_ROLE_ID"],
                     secret_id=schema.SecretId(os.environ["VAULT_SECRET_ID"]),

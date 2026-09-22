@@ -1,5 +1,6 @@
 import pytest
 from pydantic import ValidationError
+from vault_secrets import _vault_tls_verify
 
 from fina.config import DatabaseSettings, SecretSettings, Settings, get_settings
 
@@ -116,3 +117,23 @@ def test_startup_without_vault_reads_mcp_api_key_from_env(monkeypatch) -> None:
 # actual API; the second tested the stand-in's NotImplementedError guard,
 # which no longer exists. TODO: reinstate Vault-wiring coverage against the
 # real package's API.
+
+
+def test_vault_tls_verify_defaults_to_true(monkeypatch) -> None:
+    monkeypatch.delenv("VAULT_CA_BUNDLE", raising=False)
+    assert _vault_tls_verify() is True
+
+
+def test_vault_tls_verify_false_disables_verification(monkeypatch) -> None:
+    monkeypatch.setenv("VAULT_CA_BUNDLE", "false")
+    assert _vault_tls_verify() is False
+
+
+def test_vault_tls_verify_false_is_case_insensitive(monkeypatch) -> None:
+    monkeypatch.setenv("VAULT_CA_BUNDLE", "FALSE")
+    assert _vault_tls_verify() is False
+
+
+def test_vault_tls_verify_path_is_passed_through(monkeypatch) -> None:
+    monkeypatch.setenv("VAULT_CA_BUNDLE", "/etc/ssl/corp-ca-bundle.pem")
+    assert _vault_tls_verify() == "/etc/ssl/corp-ca-bundle.pem"

@@ -1,0 +1,16 @@
+# Corporate template from the deployment instructions.
+# Migration execution still needs to be connected to the shared pipeline;
+# this include alone does not submit k8s/migration-job.yaml.
+include:
+  - project: "sberinsur/infra-public/common-pipeline"
+    ref: "feature/inject-ca"
+    file: "python.gitlab-ci.yml"
+
+variables:
+  TEAM_TAG: "AI"
+  CODEBASE_BUILD_TOOL: "pip"
+  NAMESPACE: "ai-agents"
+  K8S_CLUSTER_DEV: "${K8S_CLUSTER_DEV_ADV_GLOBAL}"
+  K8S_CLUSTER_TEST: "${K8S_CLUSTER_TEST_ADV_GLOBAL}"
+  K8S_CLUSTER_PREPROD: "${K8S_CLUSTER_PREPROD_ADV_GLOBAL}"
+  K8S_CLUSTER_PROD: "${K8S_CLUSTER_ADV_GLOBAL}"
