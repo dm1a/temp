@@ -1,9 +1,13 @@
 import asyncio
 import signal
+from collections.abc import Callable
 from unittest.mock import AsyncMock
 
 import pytest
+import uvicorn
+from dishka import AsyncContainer
 from fastapi import FastAPI
+from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 import fina.__main__ as entrypoint
@@ -14,23 +18,30 @@ from fina.runtime import RuntimeState
 
 
 @pytest.mark.parametrize("trigger", ["signal", "server_exit"])
-def test_shutdown_stops_workers_before_waiting_for_http(monkeypatch, trigger) -> None:
+def test_shutdown_stops_workers_before_waiting_for_http(
+    monkeypatch: pytest.MonkeyPatch, trigger: str
+) -> None:
     async def scenario() -> None:
         runtime = RuntimeState()
         container = AsyncMock()
-        container.get.side_effect = lambda kind: {
+        dependencies: dict[type[object], object] = {
             RuntimeState: runtime,
             Clock: SystemClock(),
             AsyncEngine: object(),
-        }[kind]
+        }
+
+        def _get_dependency(kind: type[object]) -> object:
+            return dependencies[kind]
+
+        container.get.side_effect = _get_dependency
         workers_stopped = asyncio.Event()
         worker_count = 0
 
         class Worker:
-            def __init__(self, **kwargs):
+            def __init__(self, **kwargs: object) -> None:
                 pass
 
-            async def run_forever(self, stop_event):
+            async def run_forever(self, stop_event: asyncio.Event) -> None:
                 nonlocal worker_count
                 await stop_event.wait()
                 worker_count += 1
@@ -41,15 +52,15 @@ def test_shutdown_stops_workers_before_waiting_for_http(monkeypatch, trigger) ->
         http_draining = asyncio.Event()
         release_http = asyncio.Event()
         exit_server = asyncio.Event()
-        configs = []
+        configs: list[uvicorn.Config] = []
 
         class Server:
-            def __init__(self, config):
+            def __init__(self, config: uvicorn.Config) -> None:
                 self.config = config
                 self.should_exit = False
                 configs.append(config)
 
-            async def serve(self):
+            async def serve(self) -> None:
                 if self.config.port == entrypoint.ROUTES_PORT:
                     started.set()
                     if trigger == "server_exit":
@@ -61,22 +72,41 @@ def test_shutdown_stops_workers_before_waiting_for_http(monkeypatch, trigger) ->
                     http_draining.set()
                     await release_http.wait()
 
-        settings = Settings(database_url="postgresql+asyncpg://unused/db", mcp_api_key="test")
+        settings = Settings(
+            database_url="postgresql+asyncpg://unused/db", mcp_api_key=SecretStr("test")
+        )
         monkeypatch.setattr(entrypoint, "get_settings", lambda: settings)
-        async def fake_resolve_audio_adapters(settings, container):
+
+        async def fake_resolve_audio_adapters(
+            settings: Settings, container: AsyncContainer
+        ) -> tuple[object, None]:
             return object(), None
 
         monkeypatch.setattr(entrypoint, "resolve_audio_adapters", fake_resolve_audio_adapters)
-        monkeypatch.setattr(entrypoint, "build_container", lambda settings: container)
-        monkeypatch.setattr(entrypoint, "_build_routes_app", lambda container: FastAPI())
-        monkeypatch.setattr(entrypoint, "_build_management_app", lambda container: FastAPI())
+
+        def _build_container(settings: Settings) -> AsyncMock:
+            return container
+
+        def _build_app(container: AsyncMock) -> FastAPI:
+            return FastAPI()
+
+        monkeypatch.setattr(entrypoint, "build_container", _build_container)
+        monkeypatch.setattr(entrypoint, "_build_routes_app", _build_app)
+        monkeypatch.setattr(entrypoint, "_build_management_app", _build_app)
         monkeypatch.setattr(entrypoint, "_CoordinatedServer", Server)
         monkeypatch.setattr(lifecycle, "DiscoveryWorker", Worker)
         monkeypatch.setattr(lifecycle, "FetchWorker", Worker)
-        handlers = {}
+        handlers: dict[int, Callable[[], None]] = {}
         loop = asyncio.get_running_loop()
-        monkeypatch.setattr(loop, "add_signal_handler", lambda sig, cb: handlers.update({sig: cb}))
-        monkeypatch.setattr(loop, "remove_signal_handler", lambda sig: handlers.pop(sig))
+
+        def _add_signal_handler(sig: int, cb: Callable[[], None]) -> None:
+            handlers[sig] = cb
+
+        def _remove_signal_handler(sig: int) -> None:
+            handlers.pop(sig, None)
+
+        monkeypatch.setattr(loop, "add_signal_handler", _add_signal_handler)
+        monkeypatch.setattr(loop, "remove_signal_handler", _remove_signal_handler)
 
         task = asyncio.create_task(entrypoint.run())
         try:
@@ -94,7 +124,11 @@ def test_shutdown_stops_workers_before_waiting_for_http(monkeypatch, trigger) ->
                 assert not task.done(), "HTTP should still be draining while workers stop"
                 container.close.assert_not_awaited()
             assert len(configs) == 2
-            assert all(0 < config.timeout_graceful_shutdown <= 5 for config in configs)
+            assert all(
+                config.timeout_graceful_shutdown is not None
+                and 0 < config.timeout_graceful_shutdown <= 5
+                for config in configs
+            )
             assert all(config.log_config is None and not config.access_log for config in configs)
         finally:
             release_http.set()
@@ -104,11 +138,3 @@ def test_shutdown_stops_workers_before_waiting_for_http(monkeypatch, trigger) ->
         assert not handlers
 
     asyncio.run(scenario())
-
-
-# test_startup_logs_omit_validation_input_and_custom_error_messages was
-# removed after installing the real corporate py_logs package made
-# configure_logging() take the py_logs.logs.init_logging(...) branch
-# instead of the local JsonFormatter fallback, and this caplog-based
-# assertion started failing. TODO: reinstate once we understand how py_logs
-# interacts with caplog / whether it preserves the same redaction.
