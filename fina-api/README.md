@@ -361,7 +361,7 @@ types into these models.
 | Internal model | Contract |
 | --- | --- |
 | `AnalyzeInput` | Local call UUID as `task_id`, exact `manifest_object_key` |
-| `AnalyzeResult` | `kind="success"`, schema version, echoed task ID, shared identity, artifacts, aware `processed_at`, complete `provider_result` |
+| `AnalyzeResult` | `kind="success"`, schema version, echoed task ID, artifacts, aware `processed_at`, complete `provider_result` |
 | `AnalyzeError` | `kind="failure"`, echoed task ID, error code/message, explicit `retryable` flag, optional HTTP status |
 | `AnalysisArtifacts` | Required transcript, summary and per-call profile; optional accumulated profile and pre-order |
 | `Transcript` | Full text and optional segments with start/end seconds, text and optional speaker |
@@ -380,13 +380,22 @@ accumulated `CustomerProfile`. The internal `customer_profile` is therefore opti
 When absent, profile search text is empty; per-call answers are not substituted for
 an accumulated profile. The aggregation contract remains deferred.
 
+The current external draft's `AnalysisArtifacts.transcript` is a plain string with no
+segment boundaries or speaker labels, so the adapter maps it to `Transcript.text` with
+an empty `segments` tuple; the internal model still supports segments for when the
+draft (re-)gains structured transcript output.
+
 Constructing `AnalysisCompletion(claim=claim, result=result)` checks the returned
-task ID and identity against the claim. The analysis claim names the stored manifest
-reference `manifest_object_key`, matching the adapter input. Error handling
-uses `error.validate_task(...)` before changing retry or failure state. The adapter
-must map these identifiers from the response and preserve the exact manifest key
-when passing it to the external `AnalyzeInput.object_key`. Provider status codes
-map to `error_code`; `http_status` is reserved for actual HTTP status codes.
+task ID against the claim. The external draft's `analyze()` no longer echoes a call
+identity, so this is a task ID check only -- unlike `FetchCompletion`, which still
+cross-checks the fetched identity against the queued one (see `CallIdentity` in
+[`domain/audio_contracts.py`](src/fina/domain/audio_contracts.py)). The analysis
+claim names the stored manifest reference `manifest_object_key`, matching the
+adapter input. Error handling uses `error.validate_task(...)` before changing retry
+or failure state. The adapter must map these identifiers from the response and
+preserve the exact manifest key when passing it to the external
+`AnalyzeInput.object_key`. Provider status codes map to `error_code`; `http_status`
+is reserved for actual HTTP status codes.
 
 `result.to_storage()` produces a JSON-compatible envelope for the existing
 `audio_analysis_jobs.analysis_result` JSONB column. It includes the normalized result

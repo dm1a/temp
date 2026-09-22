@@ -1,4 +1,4 @@
-"""Mirrors the draft FINA Analyzer SDK (final version, as shared 2026-09-07).
+"""Mirrors the draft FINA Analyzer SDK (final version, as shared 2026-09-22).
 
 The real package is not published or installable yet, so this workspace
 package stands in for it: enough of the draft to type-check and unit-test
@@ -17,8 +17,10 @@ from pydantic import (
     AfterValidator,
     BaseModel,
     BeforeValidator,
+    Field,
     NonNegativeInt,
     PositiveInt,
+    SecretStr,
     StringConstraints,
 )
 
@@ -84,14 +86,14 @@ class RiskAttitude(enum.StrEnum):
     UNKNOWN = "UNKNOWN"
 
 
-class CallIdentity(BaseModel):
-    mts_id_call: PositiveInt
-    call_start: Utc3Datetime
-    advisor_phone_number: PhoneNumber
-    client_phone_number: PhoneNumber
-    advisor_is_outbound: bool
-    call_duration_sec: PositiveInt
-    rec_duration_sec: PositiveInt
+# class CallIdentity(BaseModel):
+#     mts_id_call: PositiveInt
+#     call_start: Utc3Datetime
+#     advisor_phone_number: PhoneNumber
+#     client_phone_number: PhoneNumber
+#     advisor_is_outbound: bool
+#     call_duration_sec: PositiveInt
+#     rec_duration_sec: PositiveInt
 
 
 class AnalyzeInput(BaseModel):
@@ -104,7 +106,7 @@ class TranscriptSegment(BaseModel):
     end_ms: PositiveInt
     speaker: SpeakerRole
     text: str
-    confidence: float = 0.0
+    # confidence: float = 0.0
 
 
 class Transcript(BaseModel):
@@ -137,21 +139,21 @@ class PreOrder(BaseModel):
 
 
 class AnalysisArtifacts(BaseModel):
-    transcript: Transcript
+    transcript: str
     summary: NotEmptyString | None
     dialog_description: DialogDescription
     pre_order: PreOrder | None = None
 
 
 class AnalyzeResult(BaseModel):
-    task_id: str
-    call_identity: CallIdentity
+    task_id: UUID
+    # call_identity: CallIdentity
     artifacts: AnalysisArtifacts
     processed_at: Utc3Datetime
 
 
 class AnalyzeError(BaseModel):
-    task_id: str
+    task_id: UUID  # обязательно добавить в логи каждые!!!
     error_code: Literal["internal_error", "network_error"]
     retry: bool = False
 
@@ -186,15 +188,68 @@ class ErrorSendOrder(BaseModel):
     retry: bool = False
 
 
+class LiteLLMParams(BaseModel):
+    """Конфигурация LLM для суммаризации и извлечения сущностей."""
+
+    llm_url: str = Field(description="URL LLM API (например, OpenAI-совместимый endpoint)")
+    llm_key: SecretStr = Field(
+        default=SecretStr(""), description="API ключ для LLM. Пустая строка если не требуется"
+    )
+    llm_name: str = Field(description="Название модели (например, 'Qwen/Qwen2.5-7B-Instruct')")
+    stt_name: str = Field(description="Название модели STT (например, 'gigaam_base')")
+
+    llm_cert_path: str = Field(description="путь до серта")
+
+
+class S3Params(BaseModel):
+    """Расположение аудиофайла в S3.
+
+    Для доступа к аудио используются S3-совместимые credentials.
+    """
+
+    bucket_name: str = Field(description="Имя S3-бакета")
+
+    s3_access_key: str = Field(
+        default="",
+        description="AWS Access Key для доступа к S3. "
+        "Пустая строка если используется IAM role или другой механизм аутентификации",
+    )
+    s3_secret_key: SecretStr = Field(
+        default=SecretStr(""),
+        description="AWS Secret Key для доступа к S3. "
+        "Пустая строка если используется IAM role или другой механизм аутентификации",
+    )
+    s3_endpoint_url: str = Field(
+        default="",
+        description="S3 endpoint URL (для S3-совместимых хранилищ: MinIO, Wasabi, etc). "
+        "Пустая строка = используется AWS S3 по умолчанию",
+    )
+
+    s3_cert_path: str = Field(description="путь до серта")
+
+
 class FinaAnalyzerClient(Protocol):
     """The external FINA Analyzer SDK client (draft), as the adapter consumes it."""
 
+    def __init__(
+        self,
+        s3_params: S3Params,
+        litellm_params: LiteLLMParams,
+    ) -> None: ...
+
     async def analyze(
-        self, task_id: UUID, input_data: AnalyzeInput
+        self,
+        task_id: UUID,
+        input_data: AnalyzeInput,
     ) -> AnalyzeResult | AnalyzeError: ...
 
     async def client_profile(
-        self, task_id: UUID, input_data: list[DialogDescription]
+        self,
+        task_id: UUID,
+        input_data: list[DialogDescription],
     ) -> ClientProfile | ErrorClientProfile: ...
 
-    async def send_order(self, input_data: SendOrderInput) -> ErrorSendOrder | None: ...
+    async def send_order(
+        self,
+        input_data: SendOrderInput,
+    ) -> ErrorSendOrder | None: ...

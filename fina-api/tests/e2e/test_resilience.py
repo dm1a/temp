@@ -27,7 +27,7 @@ from tests.integration.helpers import ADVISOR, CLIENT, START, seed_call
 
 pytestmark = pytest.mark.e2e
 
-SOURCE_ID = "source-123"  # matches tests.analysis_examples.analysis_data's identity
+SOURCE_ID = "source-123"
 
 
 class FakeAudioFetcher:

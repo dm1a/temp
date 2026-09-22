@@ -8,7 +8,6 @@ from pydantic import Field, JsonValue, StrictBool, model_validator
 
 from fina.domain.audio_contracts import (
     AudioContractModel,
-    CallIdentity,
     NonBlankString,
 )
 from fina.domain.clock import ApplicationDatetime
@@ -94,7 +93,6 @@ class AnalyzeResult(AudioContractModel):
     kind: Literal["success"] = "success"
     schema_version: Literal["1"] = "1"
     task_id: UUID
-    identity: CallIdentity
     artifacts: AnalysisArtifacts
     processed_at: ApplicationDatetime
     provider_result: dict[str, JsonValue] = Field(

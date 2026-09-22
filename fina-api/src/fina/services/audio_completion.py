@@ -32,5 +32,3 @@ class AnalysisCompletion:
     def __post_init__(self) -> None:
         if self.result.task_id != self.claim.call_id:
             raise TaskIdMismatchError("Analysis task ID does not match the queued task")
-        if self.result.identity != self.claim.identity:
-            raise CallIdentityMismatchError("Analyzed call identity does not match the queued call")

@@ -25,7 +25,7 @@ from tests.test_calls_discovery import FixedClock
 pytestmark = pytest.mark.integration
 
 NOW = START + timedelta(days=1)
-SOURCE_ID = "source-123"  # matches the identity baked into tests.analysis_examples.analysis_data
+SOURCE_ID = "source-123"
 
 
 class FakeAudioAnalyzer:
@@ -61,12 +61,8 @@ async def seed_analysis_job(connection, source_id: str = SOURCE_ID) -> UUID:
     return call_id
 
 
-def analysis_result_for(call_id: UUID, source_id: str = SOURCE_ID) -> AnalyzeResult:
-    """analysis_data()'s identity defaults to SOURCE_ID; override it to match
-    whichever source_id the call was actually seeded with."""
-    data = analysis_data(call_id)
-    data["identity"]["source_call_id"] = source_id
-    return AnalyzeResult.model_validate(data)
+def analysis_result_for(call_id: UUID) -> AnalyzeResult:
+    return AnalyzeResult.model_validate(analysis_data(call_id))
 
 
 async def analysis_job_row(connection, call_id) -> dict:
@@ -304,38 +300,6 @@ def test_non_retryable_failure_marks_job_failed(database_url: str) -> None:
     asyncio.run(scenario())
 
 
-def test_identity_mismatch_marks_job_failed_without_retry(database_url: str) -> None:
-    async def scenario() -> None:
-        engine = create_async_engine(database_url)
-        try:
-            async with engine.begin() as connection:
-                call_id = await seed_analysis_job(connection)
-
-            data = analysis_data(call_id)
-            data["identity"]["advisor_phone"] = "79990009999"
-            result = AnalyzeResult.model_validate(data)
-            worker = AnalysisWorker(
-                engine=engine,
-                analyzer=FakeAudioAnalyzer({call_id: result}),
-                clock=FixedClock(NOW),
-                worker_id="worker-1",
-            )
-
-            assert await worker.run_once() is True
-
-            async with engine.connect() as connection:
-                job = await analysis_job_row(connection, call_id)
-                assert job["status"] == "FAILED"
-                assert job["last_error_code"] == "IDENTITY_MISMATCH"
-                assert job["analysis_result"] is None
-                assert await client_profile_job_status(connection, call_id) is None
-                assert await send_order_job_row(connection, call_id) is None
-        finally:
-            await engine.dispose()
-
-    asyncio.run(scenario())
-
-
 @pytest.mark.parametrize("outcome_kind", ["success", "failure"])
 def test_task_id_mismatch_marks_job_failed_without_retry(
     database_url: str, outcome_kind: str
@@ -433,8 +397,8 @@ def test_two_workers_do_not_double_process_same_job(database_url: str) -> None:
                 await enqueue_analysis(connection, call_id_2)
 
             responses = {
-                call_id_1: analysis_result_for(call_id_1, "source-1"),
-                call_id_2: analysis_result_for(call_id_2, "source-2"),
+                call_id_1: analysis_result_for(call_id_1),
+                call_id_2: analysis_result_for(call_id_2),
             }
             analyzer_a = FakeAudioAnalyzer(responses)
             analyzer_b = FakeAudioAnalyzer(responses)
@@ -623,7 +587,7 @@ def test_create_app_runs_both_workers_independently(database_url: str) -> None:
                         manifest_object_key="audio/fetch-only.json",
                     )
 
-            analysis_result = analysis_result_for(analysis_call_id, "analysis-only")
+            analysis_result = analysis_result_for(analysis_call_id)
             settings = Settings(database_url=database_url, mcp_api_key=TEST_MCP_API_KEY)
             application = create_app(
                 settings=settings,

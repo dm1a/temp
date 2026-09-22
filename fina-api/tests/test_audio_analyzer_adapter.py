@@ -6,7 +6,6 @@ from audio_analyzer import UTC3
 from audio_analyzer import AnalysisArtifacts as RawAnalysisArtifacts
 from audio_analyzer import AnalyzeError as RawAnalyzeError
 from audio_analyzer import AnalyzeResult as RawAnalyzeResult
-from audio_analyzer import CallIdentity as RawCallIdentity
 from audio_analyzer import ClientProfile as RawClientProfile
 from audio_analyzer import DialogDescription as RawDialogDescription
 from audio_analyzer import EmotionalTone as RawEmotionalTone
@@ -15,9 +14,6 @@ from audio_analyzer import ErrorSendOrder as RawErrorSendOrder
 from audio_analyzer import OrderType as RawOrderType
 from audio_analyzer import PreOrder as RawPreOrder
 from audio_analyzer import SendOrderInput as RawSendOrderInput
-from audio_analyzer import SpeakerRole as RawSpeakerRole
-from audio_analyzer import Transcript as RawTranscript
-from audio_analyzer import TranscriptSegment as RawTranscriptSegment
 
 from fina.adapters.audio_analyzer_adapter import AudioAnalyzerAdapter
 from fina.domain.audio_analysis import (
@@ -29,37 +25,15 @@ from fina.domain.audio_analysis import (
     SendOrderError,
     SendOrderResult,
 )
-from fina.domain.enums import CallDirection, OrderType
+from fina.domain.enums import OrderType
 
 TASK_ID = uuid4()
-
-
-def _identity(*, advisor_is_outbound: bool = True) -> RawCallIdentity:
-    return RawCallIdentity(
-        mts_id_call=12345678,
-        call_start=datetime(2026, 9, 1, 12, 0, tzinfo=UTC3),
-        advisor_phone_number="+79990000001",
-        client_phone_number="+79990000002",
-        advisor_is_outbound=advisor_is_outbound,
-        call_duration_sec=90,
-        rec_duration_sec=88,
-    )
+PROCESSED_AT = datetime(2026, 9, 1, 12, 0, tzinfo=UTC3)
 
 
 def _artifacts(*, pre_order: RawPreOrder | None = None) -> RawAnalysisArtifacts:
     return RawAnalysisArtifacts(
-        transcript=RawTranscript(
-            full_text="Обсуждаем облигации",
-            segments=[
-                RawTranscriptSegment(
-                    segment_id=0,
-                    start_ms=0,
-                    end_ms=2500,
-                    speaker=RawSpeakerRole.ADVISOR,
-                    text="Обсуждаем облигации",
-                )
-            ],
-        ),
+        transcript="Обсуждаем облигации",
         summary="Клиент интересуется облигациями.",
         dialog_description=RawDialogDescription(
             dialog_theme="Облигации",
@@ -74,47 +48,24 @@ def _artifacts(*, pre_order: RawPreOrder | None = None) -> RawAnalysisArtifacts:
     )
 
 
-def test_success_maps_identity_transcript_and_profile() -> None:
+def test_success_maps_transcript_and_profile() -> None:
     raw = RawAnalyzeResult(
-        task_id=str(TASK_ID),
-        call_identity=_identity(),
+        task_id=TASK_ID,
         artifacts=_artifacts(),
-        processed_at=_identity().call_start,
+        processed_at=PROCESSED_AT,
     )
 
     outcome = AudioAnalyzerAdapter.to_outcome(raw)
 
     assert isinstance(outcome, AnalyzeResult)
     assert outcome.task_id == TASK_ID
-    assert outcome.identity.source_call_id == "12345678"
-    assert outcome.identity.advisor_phone == "79990000001"
-    assert outcome.identity.counterparty_phone == "79990000002"
-    assert outcome.identity.call_direction == CallDirection.OUTBOUND
     assert outcome.artifacts.transcript.text == "Обсуждаем облигации"
-    assert len(outcome.artifacts.transcript.segments) == 1
-    segment = outcome.artifacts.transcript.segments[0]
-    assert segment.start_seconds == 0.0
-    assert segment.end_seconds == 2.5
-    assert segment.speaker == "ADVISOR"
+    assert outcome.artifacts.transcript.segments == ()
     assert outcome.artifacts.summary == "Клиент интересуется облигациями."
     assert outcome.artifacts.client_profile.data["dialog_theme"] == "Облигации"
     assert outcome.artifacts.customer_profile is None
     assert outcome.artifacts.pre_order is None
     assert outcome.provider_result["task_id"] == str(TASK_ID)
-
-
-def test_inbound_call_maps_direction() -> None:
-    raw = RawAnalyzeResult(
-        task_id=str(TASK_ID),
-        call_identity=_identity(advisor_is_outbound=False),
-        artifacts=_artifacts(),
-        processed_at=_identity().call_start,
-    )
-
-    outcome = AudioAnalyzerAdapter.to_outcome(raw)
-
-    assert isinstance(outcome, AnalyzeResult)
-    assert outcome.identity.call_direction == CallDirection.INBOUND
 
 
 def test_success_with_pre_order_maps_order_fields() -> None:
@@ -127,10 +78,9 @@ def test_success_with_pre_order_maps_order_fields() -> None:
         additional_details="Детали",
     )
     raw = RawAnalyzeResult(
-        task_id=str(TASK_ID),
-        call_identity=_identity(),
+        task_id=TASK_ID,
         artifacts=_artifacts(pre_order=raw_pre_order),
-        processed_at=_identity().call_start,
+        processed_at=PROCESSED_AT,
     )
 
     outcome = AudioAnalyzerAdapter.to_outcome(raw)
@@ -147,7 +97,7 @@ def test_success_with_pre_order_maps_order_fields() -> None:
 
 
 def test_error_maps_to_analyze_error_with_retry_flag() -> None:
-    raw = RawAnalyzeError(task_id=str(TASK_ID), error_code="network_error", retry=True)
+    raw = RawAnalyzeError(task_id=TASK_ID, error_code="network_error", retry=True)
 
     outcome = AudioAnalyzerAdapter.to_outcome(raw)
 
@@ -159,7 +109,7 @@ def test_error_maps_to_analyze_error_with_retry_flag() -> None:
 
 
 def test_non_retryable_error_maps_retry_flag_false() -> None:
-    raw = RawAnalyzeError(task_id=str(TASK_ID), error_code="internal_error", retry=False)
+    raw = RawAnalyzeError(task_id=TASK_ID, error_code="internal_error", retry=False)
 
     outcome = AudioAnalyzerAdapter.to_outcome(raw)
 

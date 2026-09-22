@@ -17,19 +17,15 @@ from fina.domain.audio_analysis import (
     Transcript,
     TranscriptSegment,
 )
-from fina.domain.audio_contracts import CallIdentity
 from fina.services.audio_analyzer import AudioAnalyzer
 from tests.analysis_examples import TASK_ID, analysis_data
 
 
-def test_analysis_parses_canonical_task_id_and_shared_call_identity() -> None:
+def test_analysis_parses_canonical_task_id() -> None:
     data = analysis_data()
-    queued = CallIdentity.model_validate(data["identity"])
-    data["identity"]["started_at"] = "2026-09-01T03:00:00+03:00"
     result = TypeAdapter(AnalyzeOutcome).validate_python(data)
 
     assert isinstance(result, AnalyzeResult)
-    assert result.identity == queued
     assert result.task_id == TASK_ID
     assert result.processed_at.isoformat() == "2026-09-01T03:02:00+03:00"
 
@@ -133,7 +129,6 @@ def test_input_preserves_exact_manifest_key_and_can_use_a_fake_analyzer() -> Non
     key = " calls//Звонок +%2F/manifest.json "
     request = AnalyzeInput(task_id=TASK_ID, manifest_object_key=key)
     data = analysis_data()
-    queued = CallIdentity.model_validate(data["identity"])
 
     class FakeAudioAnalyzer:
         async def analyze(self, input_data: AnalyzeInput) -> AnalyzeOutcome:
@@ -145,6 +140,5 @@ def test_input_preserves_exact_manifest_key_and_can_use_a_fake_analyzer() -> Non
         outcome = await analyzer.analyze(request)
         assert isinstance(outcome, AnalyzeResult)
         assert outcome.task_id == request.task_id
-        assert outcome.identity == queued
 
     asyncio.run(scenario(FakeAudioAnalyzer()))

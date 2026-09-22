@@ -45,9 +45,7 @@ async def seed_completed_analysis(connection, source_id: str) -> tuple[UUID, UUI
     client_profile_jobs row it enqueues. Returns (call_id, client_id)."""
     call_id = await seed_call(connection, source_id)
     await enqueue_analysis(connection, call_id)
-    data = analysis_data(call_id)
-    data["identity"]["source_call_id"] = source_id
-    result = AnalyzeResult.model_validate(data)
+    result = AnalyzeResult.model_validate(analysis_data(call_id))
 
     analysis_jobs = AnalysisJobRepository(connection)
     claim = await analysis_jobs.claim_next(worker_id="seed")

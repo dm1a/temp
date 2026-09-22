@@ -54,10 +54,8 @@ from fina.domain.audio_analysis import (
     SendOrderOutcome,
     SendOrderResult,
     Transcript,
-    TranscriptSegment,
 )
-from fina.domain.audio_contracts import CallIdentity
-from fina.domain.enums import CallDirection, OrderType
+from fina.domain.enums import OrderType
 
 logger = logging.getLogger(__name__)
 
@@ -194,41 +192,18 @@ class AudioAnalyzerAdapter:
         """Translate a real analyze() result into fina's AnalyzeOutcome."""
         if isinstance(raw, RawAnalyzeError):
             return AnalyzeError(
-                task_id=UUID(raw.task_id),
+                task_id=raw.task_id,
                 error_code=raw.error_code,
                 error_message=f"analyzer error: {raw.error_code}",
                 retryable=raw.retry,
                 http_status=None,
             )
 
-        raw_identity = raw.call_identity
         raw_pre_order = raw.artifacts.pre_order
         return AnalyzeResult(
-            task_id=UUID(raw.task_id),
-            identity=CallIdentity(
-                source_call_id=str(raw_identity.mts_id_call),
-                started_at=raw_identity.call_start,
-                advisor_phone=_strip_plus(raw_identity.advisor_phone_number),
-                counterparty_phone=_strip_plus(raw_identity.client_phone_number),
-                call_direction=(
-                    CallDirection.OUTBOUND
-                    if raw_identity.advisor_is_outbound
-                    else CallDirection.INBOUND
-                ),
-            ),
+            task_id=raw.task_id,
             artifacts=AnalysisArtifacts(
-                transcript=Transcript(
-                    text=raw.artifacts.transcript.full_text,
-                    segments=tuple(
-                        TranscriptSegment(
-                            start_seconds=segment.start_ms / 1000,
-                            end_seconds=segment.end_ms / 1000,
-                            text=segment.text,
-                            speaker=segment.speaker.value,
-                        )
-                        for segment in raw.artifacts.transcript.segments
-                    ),
-                ),
+                transcript=Transcript(text=raw.artifacts.transcript),
                 summary=raw.artifacts.summary or "",
                 client_profile=ClientProfile(
                     data=raw.artifacts.dialog_description.model_dump(mode="json")
@@ -280,11 +255,6 @@ class AudioAnalyzerAdapter:
 
 def _elapsed_ms(started: float) -> float:
     return round((time.perf_counter() - started) * 1000, 2)
-
-
-def _strip_plus(phone: str) -> str:
-    """The Analyzer SDK's phones are '+'-prefixed E.164; fina stores bare digit strings."""
-    return phone.removeprefix("+")
 
 
 def _add_plus(phone: str) -> str:

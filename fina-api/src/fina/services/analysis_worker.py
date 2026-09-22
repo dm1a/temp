@@ -5,7 +5,6 @@ from datetime import timedelta
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from fina.domain.audio_analysis import AnalyzeInput, AnalyzeResult, TaskIdMismatchError
-from fina.domain.audio_contracts import CallIdentityMismatchError
 from fina.domain.clock import Clock
 from fina.repositories.analysis_jobs import AnalysisJobRepository
 from fina.repositories.client_profile_jobs import ClientProfileJobRepository
@@ -134,14 +133,6 @@ class AnalysisWorker:
             await self._fail_or_retry(
                 claim,
                 error_code="TASK_ID_MISMATCH",
-                error_message=str(error),
-                error_http_status=None,
-                retryable=False,
-            )
-        except CallIdentityMismatchError as error:
-            await self._fail_or_retry(
-                claim,
-                error_code="IDENTITY_MISMATCH",
                 error_message=str(error),
                 error_http_status=None,
                 retryable=False,

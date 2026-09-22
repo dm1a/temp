@@ -10,7 +10,7 @@ from fina.domain.audio_fetch import FetchCallResult
 from fina.domain.enums import CallDirection
 from fina.repositories.types import AnalysisJobClaim, FetchJobClaim
 from fina.services.audio_completion import AnalysisCompletion, FetchCompletion
-from tests.analysis_examples import TASK_ID, analysis_data
+from tests.analysis_examples import TASK_ID, analysis_data, identity_data
 
 MANIFEST_KEY = " calls//Звонок +%2F/manifest.json "
 
@@ -46,7 +46,7 @@ def analysis_claim(fetch_claim: FetchJobClaim) -> AnalysisJobClaim:
 def test_fetch_completion_retains_matching_claim_and_exact_manifest_key(
     fetch_claim: FetchJobClaim,
 ) -> None:
-    identity = CallIdentity.model_validate(analysis_data()["identity"])
+    identity = CallIdentity.model_validate(identity_data())
     # Both the returned identity and the claim normalize the input UTC timestamp.
     assert identity.started_at.isoformat() == "2026-09-01T03:00:00+03:00"
     assert fetch_claim.identity.started_at.isoformat() == "2026-09-01T03:00:00+03:00"
@@ -63,7 +63,6 @@ def test_analysis_completion_retains_matching_claim_and_complete_result(
     analysis_claim: AnalysisJobClaim,
 ) -> None:
     result = AnalyzeResult.model_validate(analysis_data())
-    assert result.identity.started_at.isoformat() == "2026-09-01T03:00:00+03:00"
 
     completion = AnalysisCompletion(claim=analysis_claim, result=result)
 
@@ -71,7 +70,6 @@ def test_analysis_completion_retains_matching_claim_and_complete_result(
     assert completion.result is result
 
 
-@pytest.mark.parametrize("kind", ["fetch", "analysis"])
 @pytest.mark.parametrize(
     ("field", "value"),
     [
@@ -82,30 +80,23 @@ def test_analysis_completion_retains_matching_claim_and_complete_result(
         ("call_direction", "OUTBOUND"),
     ],
 )
-def test_completion_construction_rejects_each_identity_mismatch(
+def test_fetch_completion_construction_rejects_each_identity_mismatch(
     fetch_claim: FetchJobClaim,
-    analysis_claim: AnalysisJobClaim,
-    kind: str,
     field: str,
     value: str,
 ) -> None:
-    data = analysis_data()
-    data["identity"][field] = value
-    result = AnalyzeResult.model_validate(data)
+    identity = CallIdentity.model_validate(identity_data(**{field: value}))
 
     with pytest.raises(CallIdentityMismatchError, match="does not match the queued call") as error:
-        if kind == "fetch":
-            FetchCompletion(
-                claim=fetch_claim,
-                result=FetchCallResult(identity=result.identity, manifest_object_key=MANIFEST_KEY),
-            )
-        else:
-            AnalysisCompletion(claim=analysis_claim, result=result)
+        FetchCompletion(
+            claim=fetch_claim,
+            result=FetchCallResult(identity=identity, manifest_object_key=MANIFEST_KEY),
+        )
 
     assert value not in str(error.value)
 
 
-def test_analysis_completion_rejects_wrong_task_even_when_identity_matches(
+def test_analysis_completion_rejects_wrong_task_id(
     analysis_claim: AnalysisJobClaim,
 ) -> None:
     result = AnalyzeResult.model_validate(analysis_data(uuid4()))
@@ -118,7 +109,7 @@ def test_fetch_completion_cannot_be_rebound_to_a_different_call(
     fetch_claim: FetchJobClaim,
 ) -> None:
     result = FetchCallResult(
-        identity=CallIdentity.model_validate(analysis_data()["identity"]),
+        identity=CallIdentity.model_validate(identity_data()),
         manifest_object_key=MANIFEST_KEY,
     )
     completion = FetchCompletion(claim=fetch_claim, result=result)

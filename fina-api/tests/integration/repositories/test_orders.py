@@ -21,9 +21,7 @@ async def seed_order(connection: AsyncConnection, source_id: str, **call_overrid
     the orders row AnalysisWorker._complete() would insert."""
     call_id = await seed_call(connection, source_id, **call_overrides)
     await enqueue_analysis(connection, call_id)
-    data = analysis_data(call_id)
-    data["identity"]["source_call_id"] = source_id
-    result = AnalyzeResult.model_validate(data)
+    result = AnalyzeResult.model_validate(analysis_data(call_id))
 
     analysis_jobs = AnalysisJobRepository(connection)
     claim = await analysis_jobs.claim_next(worker_id="seed")

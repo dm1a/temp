@@ -5,17 +5,20 @@ from uuid import UUID
 TASK_ID = UUID("9b6cb9ea-2973-42a4-8524-8b47b7281a11")
 
 
+def identity_data(**changes: object) -> dict[str, object]:
+    return {
+        "source_call_id": "source-123",
+        "started_at": "2026-09-01T00:00:00Z",
+        "advisor_phone": "79990000001",
+        "counterparty_phone": "79990000002",
+        "call_direction": "INBOUND",
+    } | changes
+
+
 def analysis_data(task_id: UUID = TASK_ID) -> dict:
     return {
         "kind": "success",
         "task_id": str(task_id),
-        "identity": {
-            "source_call_id": "source-123",
-            "started_at": "2026-09-01T00:00:00Z",
-            "advisor_phone": "79990000001",
-            "counterparty_phone": "79990000002",
-            "call_direction": "INBOUND",
-        },
         "artifacts": {
             "transcript": {
                 "text": "Обсуждаем облигации и акции.",
