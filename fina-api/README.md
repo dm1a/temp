@@ -532,10 +532,16 @@ To run only repository tests with that environment variable configured:
 uv run pytest tests/integration/repositories -rs
 ```
 
-The container test runner provides PostgreSQL and runs lint, formatting, unit tests,
-and integration tests, including two independent app instances and separate worker connections:
+The container test runner provides PostgreSQL and minio (for minio-stack integration
+tests -- see [`tests/integration/test_minio_stack.py`](tests/integration/test_minio_stack.py))
+and runs lint, formatting, unit tests, and integration tests, including two independent
+app instances and separate worker connections. `createbucket` (which creates minio's
+test bucket) must be run to completion first, as its own step -- it's deliberately not
+a `tests` dependency inside the `up` command below, since `--abort-on-container-exit`
+would otherwise treat its intentional exit 0 as a reason to tear down the whole stack:
 
 ```bash
+docker compose -f compose.test.yaml run --rm createbucket
 docker compose -f compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
 docker compose -f compose.test.yaml down --volumes
 ```
@@ -544,9 +550,11 @@ On a machine with no path to the public internet (e.g. inside the corporate
 network), use [`compose.test.corporate.yaml`](compose.test.corporate.yaml)
 instead -- it builds [`Dockerfile`](Dockerfile)'s `test` stage and pulls
 postgres from the same internal registry mirror `Dockerfile` uses for python,
-rather than `Dockerfile.public` and public Docker Hub:
+rather than `Dockerfile.public` and public Docker Hub (see that file's header
+comment for the unverified minio/quay.io mirror path it assumes):
 
 ```bash
+docker compose -f compose.test.corporate.yaml run --rm createbucket
 docker compose -f compose.test.corporate.yaml up --build --abort-on-container-exit --exit-code-from tests
 docker compose -f compose.test.corporate.yaml down --volumes
 ```

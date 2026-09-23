@@ -63,3 +63,11 @@ def database_url() -> Iterator[str]:
         yield test_url
     finally:
         asyncio.run(drop())
+
+
+@pytest.fixture
+def minio_endpoint_url() -> str:
+    endpoint_url = os.environ.get("MINIO_ENDPOINT_URL")
+    if endpoint_url is None:
+        pytest.skip("Set MINIO_ENDPOINT_URL to run minio integration tests")
+    return endpoint_url

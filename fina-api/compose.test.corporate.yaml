@@ -1,11 +1,28 @@
 # Corporate-network equivalent of compose.test.yaml: builds Dockerfile's
 # `test` stage instead of Dockerfile.public's, and pulls postgres from the
 # same internal Docker Hub mirror Dockerfile already uses for python
-# (cr.ci.sberinsur.local/dockerhub/library/...), since plain `postgres:15-alpine`
+# (cr.ci.sberinsur.local/dockerhub/...), since plain `postgres:15-alpine`
 # isn't reachable without a path to the public internet. Use this file, not
-# compose.test.yaml, on a machine with no public internet access. Confirm the
-# mirror actually proxies postgres before relying on this -- Dockerfile's
+# compose.test.yaml, on a machine with no public internet access. Confirm
+# the mirror actually proxies postgres before relying on this -- Dockerfile's
 # comments only establish that it proxies python.
+#
+# minio/minio and minio/mc are NOT on Docker Hub anymore -- MinIO moved
+# distribution to Quay (quay.io/minio/minio, quay.io/minio/mc; confirmed by
+# directly pulling both while building this file: Docker Hub now returns
+# "pull access denied ... repository does not exist"). The image refs below
+# guess at a `dockerhub/`-style mirror path under a `quay/` prefix, mirroring
+# this registry's existing convention -- this is UNVERIFIED; confirm the
+# mirror actually proxies quay.io (or add one) before relying on this, more
+# so than the postgres caveat above.
+#
+# minio + createbucket only test the minio stack itself (reachability, and
+# that the bucket exists) -- see tests/integration/test_minio_stack.py.
+# audio_fetcher (packages/audio_fetcher) is still a stand-in for the
+# not-yet-published MTS AudioFetcher SDK, and its S3 calls all raise
+# NotImplementedError (see that package's __init__.py), so there's no real
+# audio_fetcher-against-minio integration test yet -- that needs the real
+# SDK (or a real S3-calling adapter) first.
 #
 # See compose.e2e.yaml's comment -- pinned so this doesn't collide with it
 # or compose.test.yaml under the directory-derived default project name.
@@ -23,6 +40,42 @@ services:
       interval: 1s
       timeout: 5s
       retries: 30
+  minio:
+    # See the quay.io caveat in this file's header comment.
+    image: cr.ci.sberinsur.local/quay/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: fina_test
+      MINIO_ROOT_PASSWORD: fina_test
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 1s
+      timeout: 5s
+      retries: 30
+  createbucket:
+    # minio itself never creates buckets; this one-off `mc` run does, then
+    # exits. `profiles` keeps plain `up` (no service args) from starting it at
+    # all: with no `tests` dependency to prevent it, `up` still starts every
+    # service *defined* in this file, and `--abort-on-container-exit` (see
+    # README's documented run command) treats any of them exiting -- including
+    # this one's intentional exit 0 -- as a reason to tear down the whole
+    # stack. Run it to completion first instead, as its own step
+    # (`docker compose run --rm createbucket`), before `up` starts `tests`.
+    profiles: ["tools"]
+    image: cr.ci.sberinsur.local/quay/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    depends_on:
+      minio:
+        condition: service_healthy
+    environment:
+      MINIO_ROOT_USER: fina_test
+      MINIO_ROOT_PASSWORD: fina_test
+      MINIO_BUCKET_NAME: audio-fetcher-dev
+    entrypoint:
+      [
+        "sh",
+        "-c",
+        "mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$MINIO_BUCKET_NAME",
+      ]
   tests:
     build:
       context: .
@@ -30,7 +83,13 @@ services:
       target: test
     environment:
       FINA_TEST_DATABASE_URL: postgresql+asyncpg://fina_test:fina_test@postgres:5432/postgres
+      MINIO_ENDPOINT_URL: http://minio:9000
+      MINIO_ROOT_USER: fina_test
+      MINIO_ROOT_PASSWORD: fina_test
+      MINIO_BUCKET_NAME: audio-fetcher-dev
     depends_on:
       postgres:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     command: ["sh", "-c", "ruff check . && ruff format --check . && pytest --strict-markers"]
