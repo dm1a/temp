@@ -1,17 +1,10 @@
-# Corporate-network equivalent of compose.e2e.yaml: builds Dockerfile's
-# `runtime` stage instead of Dockerfile.public's, and pulls postgres from
-# the same internal Docker Hub mirror Dockerfile already uses for python,
-# since plain `postgres:15-alpine` isn't reachable without a path to the
-# public internet. Point tests/e2e/stack.py at this file (see its
-# FINA_E2E_COMPOSE_FILE env var) instead of compose.e2e.yaml on a machine
-# with no public internet access.
-name: fina-corporate
+name: fina
 
 x-runtime: &runtime
   image: ${COMPOSE_PROJECT_NAME}-app
   build:
     context: ..
-    dockerfile: docker/Dockerfile
+    dockerfile: docker/Dockerfile.public
     target: runtime
 
 x-app: &app
@@ -37,7 +30,7 @@ x-app: &app
 
 services:
   postgres:
-    image: cr.ci.sberinsur.local/dockerhub/library/postgres:15-alpine
+    image: postgres:15-alpine
     environment:
       POSTGRES_USER: fina_e2e
       POSTGRES_PASSWORD: fina_e2e

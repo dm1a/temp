@@ -1,8 +1,8 @@
-name: fina-test-corporate
+name: fina-test
 
 services:
   postgres:
-    image: cr.ci.sberinsur.local/dockerhub/library/postgres:15-alpine
+    image: postgres:15-alpine
     environment:
       POSTGRES_USER: fina_test
       POSTGRES_PASSWORD: fina_test
@@ -13,7 +13,7 @@ services:
       timeout: 5s
       retries: 30
   minio:
-    image: cr.ci.sberinsur.local/quay/minio/minio:RELEASE.2025-09-07T16-13-09Z
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: fina_test
@@ -25,7 +25,7 @@ services:
       retries: 30
   createbucket:
     profiles: ["tools"]
-    image: cr.ci.sberinsur.local/quay/minio/mc:RELEASE.2025-08-13T08-35-41Z
+    image: quay.io/minio/mc:RELEASE.2025-08-13T08-35-41Z
     depends_on:
       minio:
         condition: service_healthy
@@ -42,7 +42,7 @@ services:
   tests:
     build:
       context: ..
-      dockerfile: docker/Dockerfile
+      dockerfile: docker/Dockerfile.public
       target: test
     environment:
       FINA_TEST_DATABASE_URL: postgresql+asyncpg://fina_test:fina_test@postgres:5432/postgres

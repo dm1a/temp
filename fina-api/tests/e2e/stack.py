@@ -16,12 +16,12 @@ API_KEY = "e2e-only-api-key"
 AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 SERVICES = ("api-1", "api-2")
 
-# docker/compose.e2e.yaml needs a public path to Docker Hub/ghcr.io
+# docker/compose.e2e.public.yaml needs a public path to Docker Hub/ghcr.io
 # (docker/Dockerfile.public, plain postgres:15-alpine). On a machine with no
-# public internet access, set this to docker/compose.e2e.corporate.yaml,
-# which builds docker/Dockerfile's runtime stage and pulls postgres from the
-# same internal registry mirror instead.
-COMPOSE_FILE = os.environ.get("FINA_E2E_COMPOSE_FILE", "docker/compose.e2e.yaml")
+# public internet access, set this to docker/compose.e2e.yaml, which builds
+# docker/Dockerfile's runtime stage and pulls postgres from the same
+# internal registry mirror instead.
+COMPOSE_FILE = os.environ.get("FINA_E2E_COMPOSE_FILE", "docker/compose.e2e.public.yaml")
 
 
 @dataclass
@@ -56,7 +56,7 @@ class ComposeStack:
         return result.stdout.strip()
 
     def image(self) -> str:
-        # Matches compose.e2e.yaml's x-runtime anchor (image: ${COMPOSE_PROJECT_NAME}-app)
+        # Matches compose.e2e.public.yaml's x-runtime anchor (image: ${COMPOSE_PROJECT_NAME}-app)
         # directly, rather than parsing `compose config --images` -- its output order
         # isn't reliably filtered by service or service-declaration order, so picking
         # a line by position intermittently returned postgres:15-alpine instead.

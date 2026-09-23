@@ -1,13 +1,10 @@
-# Pins the Compose project name (otherwise Docker Compose defaults to this
-# file's own directory basename, "docker", producing docker-* container/image
-# names even though the app itself is just "fina").
-name: fina
+name: fina-corporate
 
 x-runtime: &runtime
   image: ${COMPOSE_PROJECT_NAME}-app
   build:
     context: ..
-    dockerfile: docker/Dockerfile.public
+    dockerfile: docker/Dockerfile
     target: runtime
 
 x-app: &app
@@ -33,7 +30,7 @@ x-app: &app
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: cr.ci.sberinsur.local/dockerhub/library/postgres:15-alpine
     environment:
       POSTGRES_USER: fina_e2e
       POSTGRES_PASSWORD: fina_e2e

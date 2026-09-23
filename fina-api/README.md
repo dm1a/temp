@@ -541,22 +541,22 @@ a `tests` dependency inside the `up` command below, since `--abort-on-container-
 would otherwise treat its intentional exit 0 as a reason to tear down the whole stack:
 
 ```bash
-docker compose -f docker/compose.test.yaml run --rm createbucket
-docker compose -f docker/compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
-docker compose -f docker/compose.test.yaml down --volumes
+docker compose -f docker/compose.test.public.yaml run --rm createbucket
+docker compose -f docker/compose.test.public.yaml up --build --abort-on-container-exit --exit-code-from tests
+docker compose -f docker/compose.test.public.yaml down --volumes
 ```
 
 On a machine with no path to the public internet (e.g. inside the corporate
-network), use [`docker/compose.test.corporate.yaml`](docker/compose.test.corporate.yaml)
+network), use [`docker/compose.test.yaml`](docker/compose.test.yaml)
 instead -- it builds [`docker/Dockerfile`](docker/Dockerfile)'s `test` stage and pulls
 postgres from the same internal registry mirror `docker/Dockerfile` uses for python,
 rather than `Dockerfile.public` and public Docker Hub (see that file's header
 comment for the unverified minio/quay.io mirror path it assumes):
 
 ```bash
-docker compose -f docker/compose.test.corporate.yaml run --rm createbucket
-docker compose -f docker/compose.test.corporate.yaml up --build --abort-on-container-exit --exit-code-from tests
-docker compose -f docker/compose.test.corporate.yaml down --volumes
+docker compose -f docker/compose.test.yaml run --rm createbucket
+docker compose -f docker/compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
+docker compose -f docker/compose.test.yaml down --volumes
 ```
 
 ### End-to-end tests
@@ -573,11 +573,11 @@ uv run pytest tests/e2e --run-e2e --strict-markers
 
 On a machine with no path to the public internet, set `FINA_E2E_COMPOSE_FILE`
 so the suite builds [`docker/Dockerfile`](docker/Dockerfile) via
-[`docker/compose.e2e.corporate.yaml`](docker/compose.e2e.corporate.yaml) instead of
-`Dockerfile.public` via `compose.e2e.yaml`:
+[`docker/compose.e2e.yaml`](docker/compose.e2e.yaml) instead of
+`Dockerfile.public` via `compose.e2e.public.yaml`:
 
 ```bash
-FINA_E2E_COMPOSE_FILE=docker/compose.e2e.corporate.yaml uv run pytest tests/e2e --run-e2e --strict-markers
+FINA_E2E_COMPOSE_FILE=docker/compose.e2e.yaml uv run pytest tests/e2e --run-e2e --strict-markers
 ```
 
 The six E2E scenarios cover:
@@ -593,7 +593,7 @@ The six E2E scenarios cover:
   followed by recovery without reapplying migrations.
 
 The suite owns a unique Compose project defined in
-[`docker/compose.e2e.yaml`](docker/compose.e2e.yaml) (or `docker/compose.e2e.corporate.yaml`, above),
+[`docker/compose.e2e.public.yaml`](docker/compose.e2e.public.yaml) (or `docker/compose.e2e.yaml`, above),
 with a fresh PostgreSQL volume and randomly
 assigned localhost ports. It builds the runtime image once, runs migrations once,
 resets only its own test data between scenarios, captures container logs on failure,
