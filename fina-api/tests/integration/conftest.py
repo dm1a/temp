@@ -67,7 +67,7 @@ def database_url() -> Iterator[str]:
 
 @pytest.fixture
 def minio_endpoint_url() -> str:
-    endpoint_url = os.environ.get("MINIO_ENDPOINT_URL")
+    endpoint_url = os.environ.get("FINA_S3_ENDPOINT_URL")
     if endpoint_url is None:
-        pytest.skip("Set MINIO_ENDPOINT_URL to run minio integration tests")
+        pytest.skip("Set FINA_S3_ENDPOINT_URL to run minio integration tests")
     return endpoint_url

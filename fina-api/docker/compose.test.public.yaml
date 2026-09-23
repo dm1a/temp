@@ -30,14 +30,14 @@ services:
       minio:
         condition: service_healthy
     environment:
-      MINIO_ROOT_USER: fina_test
-      MINIO_ROOT_PASSWORD: fina_test
-      MINIO_BUCKET_NAME: audio-fetcher-dev
+      FINA_S3_ACCESS_KEY: fina_test
+      FINA_S3_SECRET_KEY: fina_test
+      FINA_S3_BUCKET_NAME: audio-fetcher-dev
     entrypoint:
       [
         "sh",
         "-c",
-        "mc alias set local http://minio:9000 $$MINIO_ROOT_USER $$MINIO_ROOT_PASSWORD && mc mb --ignore-existing local/$$MINIO_BUCKET_NAME",
+        "mc alias set local http://minio:9000 $$FINA_S3_ACCESS_KEY $$FINA_S3_SECRET_KEY && mc mb --ignore-existing local/$$FINA_S3_BUCKET_NAME",
       ]
   tests:
     build:
@@ -46,10 +46,10 @@ services:
       target: test
     environment:
       FINA_TEST_DATABASE_URL: postgresql+asyncpg://fina_test:fina_test@postgres:5432/postgres
-      MINIO_ENDPOINT_URL: http://minio:9000
-      MINIO_ROOT_USER: fina_test
-      MINIO_ROOT_PASSWORD: fina_test
-      MINIO_BUCKET_NAME: audio-fetcher-dev
+      FINA_S3_ENDPOINT_URL: http://minio:9000
+      FINA_S3_ACCESS_KEY: fina_test
+      FINA_S3_SECRET_KEY: fina_test
+      FINA_S3_BUCKET_NAME: audio-fetcher-dev
     depends_on:
       postgres:
         condition: service_healthy
