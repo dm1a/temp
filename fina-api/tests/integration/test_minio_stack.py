@@ -6,9 +6,10 @@ import pytest
 from botocore.exceptions import ClientError
 from mypy_boto3_s3 import S3Client
 
-# Exercises the minio + createbucket services from compose.test(.corporate).yaml
-# directly -- not audio_fetcher, which is still a stand-in SDK whose S3 calls
-# all raise NotImplementedError (see packages/audio_fetcher's __init__.py).
+# Exercises the minio + createbucket services from
+# docker/compose.test(.corporate).yaml directly -- not audio_fetcher, which
+# is still a stand-in SDK whose S3 calls all raise NotImplementedError (see
+# packages/audio_fetcher's __init__.py).
 pytestmark = pytest.mark.integration
 
 MINIO_ROOT_USER = os.environ.get("MINIO_ROOT_USER", "fina_test")

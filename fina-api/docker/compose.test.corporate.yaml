@@ -78,8 +78,8 @@ services:
       ]
   tests:
     build:
-      context: .
-      dockerfile: Dockerfile
+      context: ..
+      dockerfile: docker/Dockerfile
       target: test
     environment:
       FINA_TEST_DATABASE_URL: postgresql+asyncpg://fina_test:fina_test@postgres:5432/postgres

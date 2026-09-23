@@ -1,13 +1,17 @@
-# Pins the Compose project name (otherwise Docker Compose defaults to this
-# repo directory's basename, "fina-api", producing fina-api-* container/image
-# names even though the app itself is just "fina").
-name: fina
+# Corporate-network equivalent of compose.e2e.yaml: builds Dockerfile's
+# `runtime` stage instead of Dockerfile.public's, and pulls postgres from
+# the same internal Docker Hub mirror Dockerfile already uses for python,
+# since plain `postgres:15-alpine` isn't reachable without a path to the
+# public internet. Point tests/e2e/stack.py at this file (see its
+# FINA_E2E_COMPOSE_FILE env var) instead of compose.e2e.yaml on a machine
+# with no public internet access.
+name: fina-corporate
 
 x-runtime: &runtime
   image: ${COMPOSE_PROJECT_NAME}-app
   build:
-    context: .
-    dockerfile: Dockerfile.public
+    context: ..
+    dockerfile: docker/Dockerfile
     target: runtime
 
 x-app: &app
@@ -33,7 +37,7 @@ x-app: &app
 
 services:
   postgres:
-    image: postgres:15-alpine
+    image: cr.ci.sberinsur.local/dockerhub/library/postgres:15-alpine
     environment:
       POSTGRES_USER: fina_e2e
       POSTGRES_PASSWORD: fina_e2e

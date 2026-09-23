@@ -36,7 +36,8 @@ build/
 
 # Specific dotfiles/extensionless files that should be tracked.
 !.gitignore
-!.dockerignore
 !.env.example
 !Dockerfile
 !Dockerfile.public
+!Dockerfile.dockerignore
+!Dockerfile.public.dockerignore

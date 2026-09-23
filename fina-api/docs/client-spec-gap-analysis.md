@@ -22,7 +22,7 @@ The default Docker command calls `create_app()` without `audio_fetcher` or
 `audio_analyzer`. Both default to `None`, so the default deployment starts the HTTP
 API without starting the processing workers. Adapter implementations need real SDK
 clients, configuration and application-factory registration. See
-[main.py](../src/fina/main.py), [Dockerfile.public](../Dockerfile.public),
+[main.py](../src/fina/main.py), [Dockerfile.public](../docker/Dockerfile.public),
 [MTS SDK contract](../src/fina/adapters/mts_audio_fetcher_sdk.py) and
 [Analyzer SDK contract](../src/fina/adapters/fina_analyzer_sdk.py).
 
