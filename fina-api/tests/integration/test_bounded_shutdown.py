@@ -56,63 +56,65 @@ def test_bounded_shutdown_cancels_a_stuck_worker_and_leaves_its_claim_recoverabl
                 call_id = await seed_call(connection, "call-1")
 
             settings = Settings(database_url=database_url, mcp_api_key="test-key")
-            container = make_async_container(ApplicationProvider(settings=settings))
+            container = make_async_container(ApplicationProvider(settings=settings,),)
+            try:
+                reached = asyncio.Event()
+                fetcher = HangingAudioFetcher(reached)
 
-            reached = asyncio.Event()
-            fetcher = HangingAudioFetcher(reached)
+                lifecycle = application_lifecycle(
+                    container,
+                    audio_fetcher=fetcher,
+                    audio_analyzer=None,
+                    max_retry_attempts=5,
+                    shutdown_grace_period=timedelta(seconds=0.3),
+                )
+                await lifecycle.__aenter__()
+                await asyncio.wait_for(reached.wait(), timeout=5)
 
-            lifecycle = application_lifecycle(
-                container,
-                audio_fetcher=fetcher,
-                audio_analyzer=None,
-                max_retry_attempts=5,
-                shutdown_grace_period=timedelta(seconds=0.3),
-            )
-            await lifecycle.__aenter__()
-            await asyncio.wait_for(reached.wait(), timeout=5)
+                loop = asyncio.get_running_loop()
+                start = loop.time()
+                await asyncio.wait_for(lifecycle.__aexit__(None, None, None), timeout=5)
+                elapsed = loop.time() - start
+                assert elapsed < 3, "shutdown must be bounded by the grace period, not hang"
 
-            loop = asyncio.get_running_loop()
-            start = loop.time()
-            await asyncio.wait_for(lifecycle.__aexit__(None, None, None), timeout=5)
-            elapsed = loop.time() - start
-            assert elapsed < 3, "shutdown must be bounded by the grace period, not hang"
+                async with engine.connect() as connection:
+                    row = (
+                        (
+                            await connection.execute(
+                                text(
+                                    "SELECT status, locked_by, claim_token, locked_at "
+                                    "FROM audio_fetch_jobs WHERE call_id = :call_id"
+                                ),
+                                {"call_id": call_id},
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    assert row["status"] == "IN_PROGRESS"
+                    assert row["locked_by"] is not None
+                    assert row["claim_token"] is not None
+                    assert row["locked_at"] is not None
 
-            async with engine.connect() as connection:
-                row = (
-                    (
+                # A crashed replica's claim is recovered the same way: another
+                # worker's recover_stale() sweep reclaims it once its lease is
+                # judged stale.
+                async with engine.begin() as connection:
+                    recovered = await FetchJobRepository(connection).recover_stale(
+                        locked_before=datetime.now(UTC) + timedelta(minutes=1)
+                    )
+                    assert recovered == [call_id]
+
+                async with engine.connect() as connection:
+                    status = (
                         await connection.execute(
-                            text(
-                                "SELECT status, locked_by, claim_token, locked_at "
-                                "FROM audio_fetch_jobs WHERE call_id = :call_id"
-                            ),
+                            text("SELECT status FROM audio_fetch_jobs WHERE call_id = :call_id"),
                             {"call_id": call_id},
                         )
-                    )
-                    .mappings()
-                    .one()
-                )
-                assert row["status"] == "IN_PROGRESS"
-                assert row["locked_by"] is not None
-                assert row["claim_token"] is not None
-                assert row["locked_at"] is not None
-
-            # A crashed replica's claim is recovered the same way: another
-            # worker's recover_stale() sweep reclaims it once its lease is
-            # judged stale.
-            async with engine.begin() as connection:
-                recovered = await FetchJobRepository(connection).recover_stale(
-                    locked_before=datetime.now(UTC) + timedelta(minutes=1)
-                )
-                assert recovered == [call_id]
-
-            async with engine.connect() as connection:
-                status = (
-                    await connection.execute(
-                        text("SELECT status FROM audio_fetch_jobs WHERE call_id = :call_id"),
-                        {"call_id": call_id},
-                    )
-                ).scalar_one()
-                assert status == "PENDING"
+                    ).scalar_one()
+                    assert status == "PENDING"
+            finally:
+                await container.close()
         finally:
             await engine.dispose()
 

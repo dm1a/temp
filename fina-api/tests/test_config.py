@@ -86,3 +86,61 @@ def test_startup_without_vault_reads_mcp_api_key_from_env(monkeypatch) -> None:
     settings = get_settings()
 
     assert settings.mcp_api_key.get_secret_value() == "env-provided-key"
+
+
+def test_database_url_is_assembled_from_host_user_name_and_password(monkeypatch) -> None:
+    monkeypatch.delenv("FINA_DATABASE_URL", raising=False)
+    monkeypatch.setenv("FINA_DB_HOST", "db-host")
+    monkeypatch.setenv("FINA_DB_PORT", "6543")
+    monkeypatch.setenv("FINA_DB_USER", "u")
+    monkeypatch.setenv("FINA_DB_NAME", "dbname")
+    monkeypatch.setenv("FINA_DB_PASSWORD", "p")
+    monkeypatch.setenv("FINA_MCP_API_KEY", "env-provided-key")
+
+    settings = get_settings()
+
+    assert settings.database_url == "postgresql+asyncpg://u:p@db-host:6543/dbname"
+
+
+def test_database_url_parts_default_to_port_5432_and_url_encode_credentials(monkeypatch) -> None:
+    monkeypatch.delenv("FINA_DATABASE_URL", raising=False)
+    monkeypatch.delenv("FINA_DB_PORT", raising=False)
+    monkeypatch.setenv("FINA_DB_HOST", "db-host")
+    monkeypatch.setenv("FINA_DB_USER", "u@corp")
+    monkeypatch.setenv("FINA_DB_NAME", "dbname")
+    monkeypatch.setenv("FINA_DB_PASSWORD", "p@ss/word")
+    monkeypatch.setenv("FINA_MCP_API_KEY", "env-provided-key")
+
+    settings = get_settings()
+
+    assert (
+        settings.database_url == "postgresql+asyncpg://u%40corp:p%40ss%2Fword@db-host:5432/dbname"
+    )
+
+
+def test_explicit_database_url_takes_precedence_over_parts(monkeypatch) -> None:
+    monkeypatch.setenv(
+        "FINA_DATABASE_URL", "postgresql+asyncpg://literal:literal@literal-host/literal"
+    )
+    monkeypatch.setenv("FINA_DB_HOST", "should-not-be-used")
+    monkeypatch.setenv("FINA_DB_USER", "should-not-be-used")
+    monkeypatch.setenv("FINA_DB_NAME", "should-not-be-used")
+    monkeypatch.setenv("FINA_DB_PASSWORD", "should-not-be-used")
+    monkeypatch.setenv("FINA_MCP_API_KEY", "env-provided-key")
+
+    settings = get_settings()
+
+    assert settings.database_url == "postgresql+asyncpg://literal:literal@literal-host/literal"
+
+
+def test_database_url_is_required_when_parts_are_incomplete(monkeypatch) -> None:
+    monkeypatch.delenv("FINA_DATABASE_URL", raising=False)
+    monkeypatch.setenv("FINA_DB_HOST", "db-host")
+    monkeypatch.setenv("FINA_DB_USER", "u")
+    monkeypatch.setenv("FINA_DB_NAME", "dbname")
+    monkeypatch.delenv("FINA_DB_PASSWORD", raising=False)
+    monkeypatch.setenv("FINA_MCP_API_KEY", "env-provided-key")
+
+    with pytest.raises(ValidationError) as excinfo:
+        get_settings()
+    assert excinfo.value.errors()[0]["loc"] == ("database_url",)

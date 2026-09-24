@@ -1,21 +1,3 @@
-"""python -m fina: the production entry point.
-
-Runs two ASGI servers in one process, sharing one Dishka container and one
-set of background workers:
-
-  - routes (port 8000): the public /api/v1/* business API.
-  - management (port 9000): /probes/* and /internal/tasks/* -- kept off the
-    public-facing port since /internal/tasks/discovery deliberately has no
-    authentication (see README's "Container deployment"). Keep this port
-    cluster-private.
-
-Shared resources (the DB engine, RuntimeState, background workers) are
-initialized once and torn down once, regardless of which port serves which
-routes. A startup failure in either server -- or in initializing shared
-resources -- stops the whole process; a single SIGTERM/SIGINT shuts both
-servers, and the workers, down together.
-"""
-
 import asyncio
 import contextlib
 import logging
@@ -81,73 +63,78 @@ def _build_management_app(container: AsyncContainer) -> FastAPI:
 async def run() -> None:
     settings = get_settings()
     container = build_container(settings)
-    # Fail before binding either port if processing mode can't actually run.
-    audio_fetcher, audio_analyzer = await resolve_audio_adapters(settings, container)
-
-    routes_server = _CoordinatedServer(
-        uvicorn.Config(
-            _build_routes_app(container),
-            host="0.0.0.0",
-            port=ROUTES_PORT,
-            lifespan="off",
-            log_config=None,
-            access_log=False,
-            timeout_graceful_shutdown=HTTP_SHUTDOWN_TIMEOUT,
-        )
-    )
-    management_server = _CoordinatedServer(
-        uvicorn.Config(
-            _build_management_app(container),
-            host="0.0.0.0",
-            port=MANAGEMENT_PORT,
-            lifespan="off",
-            log_config=None,
-            access_log=False,
-            timeout_graceful_shutdown=HTTP_SHUTDOWN_TIMEOUT,
-        )
-    )
-
-    stop = asyncio.Event()
-    loop = asyncio.get_running_loop()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, stop.set)
-
-    async def shut_down_on_signal() -> None:
-        await stop.wait()
-        logger.info("shutdown requested, draining workers and both servers")
-        begin_shutdown()
-        routes_server.should_exit = True
-        management_server.should_exit = True
-
-    async def serve(server: _CoordinatedServer) -> None:
-        try:
-            await server.serve()
-        finally:
-            # A server that exits without a signal must stop its sibling too.
-            stop.set()
-
-    logger.info(
-        "starting fina: routes on port %d, management on port %d, api_mode=%s",
-        ROUTES_PORT,
-        MANAGEMENT_PORT,
-        settings.api_mode,
-    )
     try:
-        async with (
-            application_lifecycle(
-                container,
-                audio_fetcher=audio_fetcher,
-                audio_analyzer=audio_analyzer,
-                max_retry_attempts=settings.max_retry_attempts,
-            ) as begin_shutdown,
-            asyncio.TaskGroup() as servers,
-        ):
-            servers.create_task(serve(routes_server), name="routes-server")
-            servers.create_task(serve(management_server), name="management-server")
-            servers.create_task(shut_down_on_signal(), name="signal-watcher")
+        audio_fetcher, audio_analyzer = await resolve_audio_adapters(settings, container)
+
+        stop = asyncio.Event()
+        loop = asyncio.get_running_loop()
+
+        async def shut_down_on_signal() -> None:
+            await stop.wait()
+            logger.info("shutdown requested, draining workers and both servers")
+            begin_shutdown()
+            routes_server.should_exit = True
+            management_server.should_exit = True
+
+        async def serve(server: _CoordinatedServer) -> None:
+            try:
+                await server.serve()
+            finally:
+                # A server that exits without a signal must stop its sibling too.
+                stop.set()
+
+        logger.info(
+            "starting fina: routes on port %d, management on port %d, api_mode=%s",
+            ROUTES_PORT,
+            MANAGEMENT_PORT,
+            settings.api_mode,
+        )
+
+        routes_server = _CoordinatedServer(
+            uvicorn.Config(
+                _build_routes_app(container),
+                host="0.0.0.0",
+                port=ROUTES_PORT,
+                lifespan="off",
+                log_config=None,
+                access_log=False,
+                timeout_graceful_shutdown=HTTP_SHUTDOWN_TIMEOUT,
+            )
+        )
+        management_server = _CoordinatedServer(
+            uvicorn.Config(
+                _build_management_app(container),
+                host="0.0.0.0",
+                port=MANAGEMENT_PORT,
+                lifespan="off",
+                log_config=None,
+                access_log=False,
+                timeout_graceful_shutdown=HTTP_SHUTDOWN_TIMEOUT,
+            )
+        )
+
+        try:
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                loop.add_signal_handler(sig, stop.set)
+
+            async with (
+                application_lifecycle(
+                    container,
+                    audio_fetcher=audio_fetcher,
+                    audio_analyzer=audio_analyzer,
+                    max_retry_attempts=settings.max_retry_attempts,
+                ) as begin_shutdown,
+                asyncio.TaskGroup() as servers,
+            ):
+                servers.create_task(serve(routes_server), name="routes-server",)
+                servers.create_task(serve(management_server), name="management-server",)
+                servers.create_task(shut_down_on_signal(), name="signal-watcher",)
+        finally:
+            for sig in (signal.SIGTERM, signal.SIGINT):
+                loop.remove_signal_handler(sig)
     finally:
-        for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.remove_signal_handler(sig)
+        await container.close()
+        logger.info("shared resources released")
 
 
 def _log_failure(error: BaseException) -> None:

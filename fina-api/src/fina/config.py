@@ -1,7 +1,9 @@
 from functools import lru_cache
+from typing import Any
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from sqlalchemy.engine import URL
 from vault_secrets import VaultSecretSettings
 
 from fina.domain.clock import ApplicationDatetime
@@ -24,6 +26,42 @@ class DatabaseSettings(BaseSettings):
 
 class Settings(DatabaseSettings, VaultSecretSettings):
     model_config = _MODEL_CONFIG
+
+    # Alternative to a literal database_url: db_host/db_port/db_user/db_name
+    # (plain env) plus db_password (env, or Vault under the key "db_password")
+    # are assembled into one below. Lets the password rotate in Vault
+    # independently of the non-secret connection details.
+    db_host: str | None = None
+    db_port: int = 5432
+    db_user: str | None = None
+    db_name: str | None = None
+    db_password: SecretStr | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _assemble_database_url_from_parts(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or data.get("database_url"):
+            return data
+        host, user, name, password = (
+            data.get("db_host"),
+            data.get("db_user"),
+            data.get("db_name"),
+            data.get("db_password"),
+        )
+        if host is None or user is None or name is None or password is None:
+            return data
+        port = data.get("db_port")
+        secret = password.get_secret_value() if isinstance(password, SecretStr) else str(password)
+        data = dict(data)
+        data["database_url"] = URL.create(
+            "postgresql+asyncpg",
+            username=str(user),
+            password=secret,
+            host=str(host),
+            port=int(port) if port else 5432,
+            database=str(name),
+        ).render_as_string(hide_password=False)
+        return data
 
     discovery_start_at: ApplicationDatetime | None = None
     max_retry_attempts: int = Field(default=5, ge=1)

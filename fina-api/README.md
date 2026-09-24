@@ -59,6 +59,14 @@ configuration only: `database_url`, `sql_echo`; used standalone by migration
 jobs, which need no secrets) are kept as separate classes for exactly that
 reason: so migrations, and anything else that only needs database
 connectivity, never have to satisfy the application's secret requirements.
+
+`Settings.database_url` can also be left unset and assembled instead from
+`db_host`/`db_port`/`db_user`/`db_name` (plain env vars) plus `db_password`
+(a plain env var, or Vault under the key `db_password`, same as
+`mcp_api_key` above) -- lets the DB password rotate in Vault independently
+of the non-secret connection details. A literal `FINA_DATABASE_URL` always
+wins if both are set. This assembly only applies to `Settings`; migrations
+via `DatabaseSettings` still take a literal `FINA_DATABASE_URL` directly.
 `Settings` also carries the FINA Analyzer and MTS AudioFetcher SDK
 configuration (`s3_*`, `llm_*`, `stt_name`, `mts_secret_string` --
 `s3_secret_key` doubles as the fetcher's own S3 secret too); it's optional

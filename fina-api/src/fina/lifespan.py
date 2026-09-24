@@ -37,11 +37,12 @@ async def application_lifecycle(
     max_retry_attempts: int,
     shutdown_grace_period: timedelta = SHUTDOWN_GRACE_PERIOD,
 ) -> AsyncGenerator[Callable[[], None]]:
-    """Owns the container's shared resources and background workers for
-    however many ASGI apps/servers are actually serving requests --
-    independent of any one of them's lifespan, so it works whether there's
-    one app (build_lifespan below) or several sharing one container (see
-    __main__.py's two-port entry point)."""
+    """Manages application runtime state and background workers.
+
+    Supports one or more ASGI servers sharing a container. The caller
+    owns the container and must close it after this lifecycle exits,
+    including when lifecycle startup or shutdown raises.
+    """
     runtime = await container.get(RuntimeState)
     application_clock = await container.get(Clock)
     runtime.started_at = application_clock.now()
@@ -171,8 +172,7 @@ async def application_lifecycle(
                 for task in worker_tasks:
                     task.cancel()
                 await asyncio.gather(*worker_tasks, return_exceptions=True)
-        await container.close()
-        logger.info("shared resources released; lifecycle complete")
+        logger.info("lifecycle complete")
 
 
 def build_lifespan(
@@ -188,12 +188,16 @@ def build_lifespan(
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncGenerator[None]:
-        async with application_lifecycle(
-            container,
-            audio_fetcher=audio_fetcher,
-            audio_analyzer=audio_analyzer,
-            max_retry_attempts=max_retry_attempts,
-        ):
-            yield
+        try:
+            async with application_lifecycle(
+                container,
+                audio_fetcher=audio_fetcher,
+                audio_analyzer=audio_analyzer,
+                max_retry_attempts=max_retry_attempts,
+            ):
+                yield
+        finally:
+            await container.close()
+            logger.info("shared resources released")
 
     return lifespan
