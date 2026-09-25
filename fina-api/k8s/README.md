@@ -20,19 +20,25 @@ Before submitting the manifest, set these values manually or through the pipelin
 | `metadata.name` | A fresh name for each deployment attempt, for example `fina-migrate-0001-initial-schema-release-123`. |
 | Container `image` | The exact registry image tag or digest being deployed to the application; replace `fina:latest`. |
 | Namespace | The target environment's namespace, supplied to `kubectl` below. |
-| `FINA_DATABASE_URL` Secret reference | An existing Secret in that namespace; the manifest defaults to Secret `fina-database-url`, key `url`. |
+| `fina-database` ConfigMap | Non-secret connection details: keys `host`, `port`, `user`, `name`. The manifest reads these into `FINA_DB_HOST`/`FINA_DB_PORT`/`FINA_DB_USER`/`FINA_DB_NAME`. |
+| `fina-vault` ConfigMap | Vault endpoint, keys `url`, `engine`, `secret_path` -- the same values the application Deployment uses, since this Job reads the same Vault secret. |
+| `fina-vault-approle` Secret | Vault AppRole credentials, keys `role_id`, `secret_id`. |
 | Pod `imagePullSecrets` / service account | The corporate registry access required to pull the image, either configured on the Job or supplied by the platform. |
 
 The Job must reach the same PostgreSQL database as the application, using an
-account with permission to apply the migrations. Provision the database Secret
-through the corporate secret-management process before creating the Job; do not
-commit credentials. Its `url` value uses the `postgresql+asyncpg://...` format.
+account with permission to apply the migrations. There is no database-URL
+secret: the Vault secret at `fina-vault`'s `secret_path` must contain a
+`db_password` key (same as the application's own secret), which the Job
+resolves itself over the AppRole above -- provision that Vault entry and the
+AppRole through the corporate secret-management process before creating the
+Job; do not commit credentials.
 
 The migration process constructs `DatabaseSettings` from
-[`src/fina/config.py`](../src/fina/config.py). It needs only
-`FINA_DATABASE_URL`; do not inject `FINA_MCP_API_KEY`, `VAULT_*`, or the full
-application environment. If the database credential is stored in Vault, the
-platform must make it available through the referenced Kubernetes Secret.
+[`src/fina/config.py`](../src/fina/config.py). It needs the `fina-database`/
+`fina-vault`/`fina-vault-approle` values above to assemble its own
+`database_url` from parts, but no `FINA_MCP_API_KEY` or any other part of the
+application's environment -- `DatabaseSettings` never requires those, even
+though it resolves Vault the same way `Settings` does.
 
 Keep [`alembic/`](../alembic/) and [`alembic.ini`](../alembic.ini) in the image.
 The existing Job uses `restartPolicy: Never`, allows two retries, has a

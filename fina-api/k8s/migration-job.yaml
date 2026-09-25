@@ -35,12 +35,55 @@ spec:
           env:
             # DatabaseSettings only -- this Job must never be given
             # fina-mcp-api-key; alembic/env.py never constructs the full
-            # Settings, only DatabaseSettings.
-            - name: FINA_DATABASE_URL
+            # Settings, only DatabaseSettings. There is no database-URL
+            # secret: db_password comes from Vault (VAULT_* below, same
+            # mechanism the application uses for its own secrets), and only
+            # the non-secret connection details below are plain values.
+            - name: FINA_DB_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: fina-database
+                  key: host
+            - name: FINA_DB_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: fina-database
+                  key: port
+            - name: FINA_DB_USER
+              valueFrom:
+                configMapKeyRef:
+                  name: fina-database
+                  key: user
+            - name: FINA_DB_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: fina-database
+                  key: name
+            - name: VAULT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: fina-vault
+                  key: url
+            - name: VAULT_ENGINE
+              valueFrom:
+                configMapKeyRef:
+                  name: fina-vault
+                  key: engine
+            - name: VAULT_SECRET_PATH
+              valueFrom:
+                configMapKeyRef:
+                  name: fina-vault
+                  key: secret_path
+            - name: VAULT_ROLE_ID
               valueFrom:
                 secretKeyRef:
-                  name: fina-database-url
-                  key: url
+                  name: fina-vault-approle
+                  key: role_id
+            - name: VAULT_SECRET_ID
+              valueFrom:
+                secretKeyRef:
+                  name: fina-vault-approle
+                  key: secret_id
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

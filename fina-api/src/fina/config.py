@@ -2,7 +2,7 @@ from functools import lru_cache
 from typing import Any
 
 from pydantic import Field, SecretStr, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import SettingsConfigDict
 from sqlalchemy.engine import URL
 from vault_secrets import VaultSecretSettings
 
@@ -17,20 +17,19 @@ _MODEL_CONFIG = SettingsConfigDict(
 )
 
 
-class DatabaseSettings(BaseSettings):
+class DatabaseSettings(VaultSecretSettings):
     model_config = _MODEL_CONFIG
 
     database_url: str
     sql_echo: bool = False
 
-
-class Settings(DatabaseSettings, VaultSecretSettings):
-    model_config = _MODEL_CONFIG
-
     # Alternative to a literal database_url: db_host/db_port/db_user/db_name
     # (plain env) plus db_password (env, or Vault under the key "db_password")
     # are assembled into one below. Lets the password rotate in Vault
-    # independently of the non-secret connection details.
+    # independently of the non-secret connection details, and lets the
+    # migration job (which builds DatabaseSettings standalone, see
+    # alembic/env.py) resolve the same Vault-held password the app uses,
+    # without ever needing mcp_api_key or any other app secret.
     db_host: str | None = None
     db_port: int = 5432
     db_user: str | None = None
@@ -62,6 +61,10 @@ class Settings(DatabaseSettings, VaultSecretSettings):
             database=str(name),
         ).render_as_string(hide_password=False)
         return data
+
+
+class Settings(DatabaseSettings):
+    model_config = _MODEL_CONFIG
 
     discovery_start_at: ApplicationDatetime | None = None
     max_retry_attempts: int = Field(default=5, ge=1)

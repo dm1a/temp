@@ -16,12 +16,12 @@ API_KEY = "e2e-only-api-key"
 AUTH_HEADERS = {"Authorization": f"Bearer {API_KEY}"}
 SERVICES = ("api-1", "api-2")
 
-# docker/compose.e2e.public.yaml needs a public path to Docker Hub/ghcr.io
-# (docker/Dockerfile.public, plain postgres:15-alpine). On a machine with no
-# public internet access, set this to docker/compose.e2e.yaml, which builds
-# docker/Dockerfile's runtime stage and pulls postgres from the same
+# .docker/compose.e2e.public.yaml needs a public path to Docker Hub/ghcr.io
+# (.docker/Dockerfile.public, plain postgres:15-alpine). On a machine with no
+# public internet access, set this to .docker/compose.e2e.yaml, which builds
+# .docker/Dockerfile's runtime stage and pulls postgres from the same
 # internal registry mirror instead.
-COMPOSE_FILE = os.environ.get("FINA_E2E_COMPOSE_FILE", "docker/compose.e2e.public.yaml")
+COMPOSE_FILE = os.environ.get("FINA_E2E_COMPOSE_FILE", ".docker/compose.e2e.public.yaml")
 
 
 @dataclass

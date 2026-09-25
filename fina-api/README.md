@@ -54,19 +54,23 @@ similar and are documented here to avoid confusion:
   `Settings` despite the shared `FINA_` text.
 
 `Settings` (secrets: `mcp_api_key`, sourced from Vault once configured -- see
-above -- otherwise a plain env var) and `DatabaseSettings` (ordinary
-configuration only: `database_url`, `sql_echo`; used standalone by migration
-jobs, which need no secrets) are kept as separate classes for exactly that
-reason: so migrations, and anything else that only needs database
-connectivity, never have to satisfy the application's secret requirements.
+above -- otherwise a plain env var) and `DatabaseSettings` (database
+connectivity only: `database_url`, `sql_echo`, plus the `db_host`/`db_port`/
+`db_user`/`db_name`/`db_password` alternative below; used standalone by
+migration jobs) are kept as separate classes so migrations, and anything else
+that only needs database connectivity, never have to satisfy `Settings`'
+other secret requirements -- `mcp_api_key` above, or the FINA Analyzer/MTS
+AudioFetcher SDK configuration below. `DatabaseSettings` still resolves
+Vault the same way `Settings` does (both mix in the same `VaultSecretSettings`
+from "Vault integration" above), so a migration job can pull the DB password
+from Vault too, under the same `db_password` key.
 
-`Settings.database_url` can also be left unset and assembled instead from
+`database_url` can also be left unset and assembled instead from
 `db_host`/`db_port`/`db_user`/`db_name` (plain env vars) plus `db_password`
-(a plain env var, or Vault under the key `db_password`, same as
+(a plain env var, or Vault under the key `db_password`, same mechanism as
 `mcp_api_key` above) -- lets the DB password rotate in Vault independently
-of the non-secret connection details. A literal `FINA_DATABASE_URL` always
-wins if both are set. This assembly only applies to `Settings`; migrations
-via `DatabaseSettings` still take a literal `FINA_DATABASE_URL` directly.
+of the non-secret connection details, for the app and for migrations alike.
+A literal `FINA_DATABASE_URL` always wins if both are set.
 `Settings` also carries the FINA Analyzer and MTS AudioFetcher SDK
 configuration (`s3_*`, `llm_*`, `stt_name`, `mts_secret_string` --
 `s3_secret_key` doubles as the fetcher's own S3 secret too); it's optional
@@ -478,7 +482,7 @@ remain in PostgreSQL; process memory and container files must not hold checkpoin
 or locks shared across replicas. Queue worker loops remain deferred as listed above.
 
 ```bash
-docker build -f docker/Dockerfile -t fina .
+docker build -f .docker/Dockerfile -t fina .
 ```
 
 The image runs as a non-root user (`python -m fina`, see "Application entry point")
@@ -492,11 +496,14 @@ in-flight jobs get their chance to finish or be cleanly abandoned. Expose only p
 does not require the MCP key.
 
 Run `alembic upgrade head` **once as a separate deployment job** using the same
-image and `FINA_DATABASE_URL`, before starting the replicas. Migration
-jobs do not require `FINA_MCP_API_KEY` or any Vault configuration -- see
-"Configuration" -- since the migration job only ever constructs
-`DatabaseSettings`, not `Settings`. Do not run migrations in every replica's
-startup command. The single initial migration, `0001_initial_schema`, creates the
+image, `FINA_DB_HOST`/`FINA_DB_USER`/`FINA_DB_NAME` and Vault (`VAULT_*`,
+resolving `db_password`) -- see "Configuration" and [`k8s/`](k8s/). There is
+no database-URL secret in this deployment; a literal `FINA_DATABASE_URL` is
+only for local dev and CI, where no Vault is available. Migration jobs do not
+require `FINA_MCP_API_KEY` or any other app secret, since the migration job
+only ever constructs `DatabaseSettings`, not `Settings`. Do not run migrations
+in every replica's startup command. The single initial migration,
+`0001_initial_schema`, creates the
 complete schema, including claim tokens, claim-state constraints, the
 single-active-discovery constraint, and the transcript lookup index.
 
@@ -549,22 +556,22 @@ a `tests` dependency inside the `up` command below, since `--abort-on-container-
 would otherwise treat its intentional exit 0 as a reason to tear down the whole stack:
 
 ```bash
-docker compose -f docker/compose.test.public.yaml run --rm createbucket
-docker compose -f docker/compose.test.public.yaml up --build --abort-on-container-exit --exit-code-from tests
-docker compose -f docker/compose.test.public.yaml down --volumes
+docker compose -f .docker/compose.test.public.yaml run --rm createbucket
+docker compose -f .docker/compose.test.public.yaml up --build --abort-on-container-exit --exit-code-from tests
+docker compose -f .docker/compose.test.public.yaml down --volumes
 ```
 
 On a machine with no path to the public internet (e.g. inside the corporate
-network), use [`docker/compose.test.yaml`](docker/compose.test.yaml)
-instead -- it builds [`docker/Dockerfile`](docker/Dockerfile)'s `test` stage and pulls
-postgres from the same internal registry mirror `docker/Dockerfile` uses for python,
+network), use [`.docker/compose.test.yaml`](.docker/compose.test.yaml)
+instead -- it builds [`.docker/Dockerfile`](.docker/Dockerfile)'s `test` stage and pulls
+postgres from the same internal registry mirror `.docker/Dockerfile` uses for python,
 rather than `Dockerfile.public` and public Docker Hub (see that file's header
 comment for the unverified minio/quay.io mirror path it assumes):
 
 ```bash
-docker compose -f docker/compose.test.yaml run --rm createbucket
-docker compose -f docker/compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
-docker compose -f docker/compose.test.yaml down --volumes
+docker compose -f .docker/compose.test.yaml run --rm createbucket
+docker compose -f .docker/compose.test.yaml up --build --abort-on-container-exit --exit-code-from tests
+docker compose -f .docker/compose.test.yaml down --volumes
 ```
 
 ### End-to-end tests
@@ -580,12 +587,12 @@ uv run pytest tests/e2e --run-e2e --strict-markers
 ```
 
 On a machine with no path to the public internet, set `FINA_E2E_COMPOSE_FILE`
-so the suite builds [`docker/Dockerfile`](docker/Dockerfile) via
-[`docker/compose.e2e.yaml`](docker/compose.e2e.yaml) instead of
+so the suite builds [`.docker/Dockerfile`](.docker/Dockerfile) via
+[`.docker/compose.e2e.yaml`](.docker/compose.e2e.yaml) instead of
 `Dockerfile.public` via `compose.e2e.public.yaml`:
 
 ```bash
-FINA_E2E_COMPOSE_FILE=docker/compose.e2e.yaml uv run pytest tests/e2e --run-e2e --strict-markers
+FINA_E2E_COMPOSE_FILE=.docker/compose.e2e.yaml uv run pytest tests/e2e --run-e2e --strict-markers
 ```
 
 The six E2E scenarios cover:
@@ -601,7 +608,7 @@ The six E2E scenarios cover:
   followed by recovery without reapplying migrations.
 
 The suite owns a unique Compose project defined in
-[`docker/compose.e2e.public.yaml`](docker/compose.e2e.public.yaml) (or `docker/compose.e2e.yaml`, above),
+[`.docker/compose.e2e.public.yaml`](.docker/compose.e2e.public.yaml) (or `.docker/compose.e2e.yaml`, above),
 with a fresh PostgreSQL volume and randomly
 assigned localhost ports. It builds the runtime image once, runs migrations once,
 resets only its own test data between scenarios, captures container logs on failure,
