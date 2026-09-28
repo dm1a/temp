@@ -1,15 +1,9 @@
-# Run once, before rolling out a Deployment that expects the schema
-# revision this Job applies. Never run migrations from the app's own
-# startup command -- see README's "Container deployment".
-#
-# Jobs are immutable: the name is suffixed with the target revision so
-# each schema-changing release gets its own Job object instead of trying
-# to edit/rerun a completed one. See k8s/README.md's maintenance
-# procedure for the full rollout order this depends on.
+# Submitted by migrate.sh with the exact application image being deployed.
+# Kubernetes generates a fresh name for every attempt; completed Jobs are never reused.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: fina-migrate-0001-initial-schema
+  generateName: fina-migrate-0001-initial-schema-
   labels:
     app.kubernetes.io/name: fina
     app.kubernetes.io/component: migration
@@ -24,66 +18,38 @@ spec:
         app.kubernetes.io/component: migration
     spec:
       restartPolicy: Never
+      imagePullSecrets:
+        - name: harbor
       securityContext:
         runAsNonRoot: true
         runAsUser: 10001
         runAsGroup: 10001
       containers:
         - name: migrate
-          image: fina:latest # pin to the exact tag being rolled out
+          image: fina:replace-in-ci # migrate.sh requires the exact deployment image
           command: ["alembic", "upgrade", "head"]
+          envFrom:
+            # The same ConfigMap the application Deployment reads, so the
+            # Job's connection details can never drift from the app's.
+            # DatabaseSettings ignores the keys it does not recognise.
+            - configMapRef:
+                name: config-fina
           env:
             # DatabaseSettings only -- this Job must never be given
             # fina-mcp-api-key; alembic/env.py never constructs the full
             # Settings, only DatabaseSettings. There is no database-URL
-            # secret: db_password comes from Vault (VAULT_* below, same
-            # mechanism the application uses for its own secrets), and only
-            # the non-secret connection details below are plain values.
-            - name: FINA_DB_HOST
-              valueFrom:
-                configMapKeyRef:
-                  name: fina-database
-                  key: host
-            - name: FINA_DB_PORT
-              valueFrom:
-                configMapKeyRef:
-                  name: fina-database
-                  key: port
-            - name: FINA_DB_USER
-              valueFrom:
-                configMapKeyRef:
-                  name: fina-database
-                  key: user
-            - name: FINA_DB_NAME
-              valueFrom:
-                configMapKeyRef:
-                  name: fina-database
-                  key: name
-            - name: VAULT_URL
-              valueFrom:
-                configMapKeyRef:
-                  name: fina-vault
-                  key: url
-            - name: VAULT_ENGINE
-              valueFrom:
-                configMapKeyRef:
-                  name: fina-vault
-                  key: engine
-            - name: VAULT_SECRET_PATH
-              valueFrom:
-                configMapKeyRef:
-                  name: fina-vault
-                  key: secret_path
+            # secret: db_password comes from Vault, resolved over the
+            # AppRole below, the same mechanism the application uses.
             - name: VAULT_ROLE_ID
               valueFrom:
                 secretKeyRef:
-                  name: fina-vault-approle
-                  key: role_id
+                  name: common-vault
+                  key: VAULT_ROLE_ID_AI_AGENTS
             - name: VAULT_SECRET_ID
               valueFrom:
                 secretKeyRef:
-                  name: fina-vault-approle
-                  key: secret_id
+                  name: common-vault
+                  key: VAULT_SECRET_ID_AI_AGENTS
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true

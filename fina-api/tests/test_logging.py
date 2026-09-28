@@ -4,6 +4,7 @@ import logging
 from types import SimpleNamespace
 
 import pytest
+from sqlalchemy.exc import ProgrammingError
 
 from fina.api.probes import ready
 from fina.logging_config import JsonFormatter
@@ -94,12 +95,53 @@ def test_readiness_logs_failures_once_and_logs_recovery(caplog):
 
     asyncio.run(scenario())
     assert [record.getMessage() for record in caplog.records] == [
-        "readiness failed",
+        "readiness failed: RuntimeError",
         "readiness recovered",
-        "readiness failed",
+        "readiness failed: RuntimeError",
     ]
     assert caplog.records[0].reason == "RuntimeError"
     assert "database-password-canary" not in caplog.text
+
+
+@pytest.mark.parametrize("sqlstate", ["42P01", "42501", "secret-canary", None])
+def test_readiness_plain_text_logs_safe_database_diagnostics(caplog, sqlstate):
+    class DriverError(Exception):
+        pass
+
+    driver_error = DriverError("database-password-canary")
+    driver_error.sqlstate = sqlstate
+
+    class Probe:
+        async def check(self):
+            raise ProgrammingError(
+                "SELECT private-query-canary", {"password": "params-canary"}, driver_error
+            )
+
+    async def scenario():
+        runtime = RuntimeState(started=True)
+        for _ in range(3):
+            response = await ready(runtime, Probe())
+            assert response.status_code == 503
+            assert response.body == b""
+
+    asyncio.run(scenario())
+    records = [record for record in caplog.records if record.name == "fina.api.probes"]
+    assert len(records) == 1
+    # Reproduce a console handler that ignores structured extra fields.
+    output = logging.Formatter("%(message)s").format(records[0])
+    expected = "ProgrammingError"
+    if sqlstate in ("42P01", "42501"):
+        expected += f" (SQLSTATE {sqlstate})"
+    assert output == f"readiness failed: {expected}"
+    assert json.loads(JsonFormatter().format(records[0]))["reason"] == expected
+    for value in [
+        "database-password-canary",
+        "private-query-canary",
+        "params-canary",
+        "secret-canary",
+    ]:
+        assert value not in output
+        assert value not in caplog.text
 
 
 @pytest.mark.parametrize("path", ["/probes/ready", "/metrics", "/api/v1/orders"])

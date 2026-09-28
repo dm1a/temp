@@ -28,3 +28,43 @@ ingress:
   tls: []
 
 existingConfigMapFiles: {}
+
+# Helm replaces lists, so retain the logging entries from values-common.yaml.
+# Creating config-fina alone does not populate the application's environment.
+sharedEnvVars:
+  - sharedVarRefName: config-fina
+    envVariableName: APP_NAME_ENV_LINK
+    sharedVarRefKey: APP_NAME_ENV_LINK
+  - sharedVarRefName: config-fina
+    envVariableName: APP_NAME
+    sharedVarRefKey: APP_NAME
+  - sharedVarRefName: config-fina
+    envVariableName: PROJECT_CODE
+    sharedVarRefKey: PROJECT_CODE
+  - sharedVarRefName: config-fina
+    envVariableName: LOGSTASH_LOG_HOST
+    sharedVarRefKey: LOGSTASH_LOG_HOST
+  - sharedVarRefName: config-fina
+    envVariableName: LOGSTASH_LOG_PORT
+    sharedVarRefKey: LOGSTASH_LOG_PORT
+  - sharedVarRefName: config-fina
+    envVariableName: FINA_DB_HOST
+    sharedVarRefKey: FINA_DB_HOST
+  - sharedVarRefName: config-fina
+    envVariableName: FINA_DB_PORT
+    sharedVarRefKey: FINA_DB_PORT
+  - sharedVarRefName: config-fina
+    envVariableName: FINA_DB_USER
+    sharedVarRefKey: FINA_DB_USER
+  - sharedVarRefName: config-fina
+    envVariableName: FINA_DB_NAME
+    sharedVarRefKey: FINA_DB_NAME
+  - sharedVarRefName: config-fina
+    envVariableName: VAULT_URL
+    sharedVarRefKey: VAULT_URL
+  - sharedVarRefName: config-fina
+    envVariableName: VAULT_ENGINE
+    sharedVarRefKey: VAULT_ENGINE
+  - sharedVarRefName: config-fina
+    envVariableName: VAULT_SECRET_PATH
+    sharedVarRefKey: VAULT_SECRET_PATH

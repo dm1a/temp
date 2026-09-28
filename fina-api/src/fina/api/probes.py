@@ -1,7 +1,9 @@
 import logging
+import re
 
 from dishka.integrations.fastapi import DishkaRoute, FromDishka
 from fastapi import APIRouter, Response, status
+from sqlalchemy.exc import DBAPIError
 
 from fina.db.health import DatabaseProbe
 from fina.runtime import RuntimeState
@@ -16,7 +18,8 @@ def _record_readiness(runtime: RuntimeState, failure: str | None) -> None:
     if failure is None:
         logger.info("readiness recovered")
     else:
-        logger.warning("readiness failed", extra={"reason": failure})
+        # py_logs' console formatter does not display structured extra fields.
+        logger.warning("readiness failed: %s", failure, extra={"reason": failure})
 
 
 router = APIRouter(
@@ -58,7 +61,12 @@ async def ready(
     try:
         await database_probe.check()
     except Exception as error:  # Neither responses nor logs expose driver messages.
-        _record_readiness(runtime, type(error).__name__)
+        failure = type(error).__name__
+        if isinstance(error, DBAPIError):
+            sqlstate = getattr(error.orig, "sqlstate", None)
+            if isinstance(sqlstate, str) and re.fullmatch(r"[0-9A-Z]{5}", sqlstate):
+                failure = f"{failure} (SQLSTATE {sqlstate})"
+        _record_readiness(runtime, failure)
         return Response(status_code=status.HTTP_503_SERVICE_UNAVAILABLE)
 
     _record_readiness(runtime, None)

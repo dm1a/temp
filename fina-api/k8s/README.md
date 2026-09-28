@@ -1,90 +1,124 @@
-# Database migration Job
+# Database migrations in GitLab
 
-This directory contains [migration-job.yaml](migration-job.yaml), which runs
-`alembic upgrade head` before an application rollout. Application deployment,
-Services, configuration and credential references are managed by the corporate
-pipeline using [`.chart/`](../.chart/).
+[migrate.sh](migrate.sh) creates [migration-job.yaml](migration-job.yaml) with
+the exact application image, waits for `alembic upgrade head` to complete, and
+returns a nonzero status if rendering, submission or migration fails. It prints
+Job diagnostics on failure. Run it before `helm upgrade` in the deployment job
+so a failed migration stops the rollout.
 
-The pipeline must explicitly create this Job and wait for it to succeed. Having
-the manifest in the repository does not make the chart run it automatically.
-Run migrations as a separate deployment step, never in each application's
-startup command or init container. Serialize deployments targeting the same
-database so two releases cannot migrate it concurrently.
+**The helper is not automatically scheduled.** The local `.gitlab-ci.yml`
+includes the private `sberinsur/infra-public/common-pipeline` template. Its
+expanded deployment job is needed to add the call in the right place while
+preserving existing configuration deployment, image selection and rules.
 
-## Prepare the Job
+## Connect the GitLab deployment job
 
-Before submitting the manifest, set these values manually or through the pipeline:
+In the existing deploy job, apply environment configuration first, select the
+application image, run the migration helper, then execute the existing Helm
+upgrade and rollout tracking commands. Keep `set -e` enabled and do not suppress
+the helper's exit status. Do not put migrations in `after_script`, an app
+startup command or an init container.
 
-| Setting | Required value |
-| --- | --- |
-| `metadata.name` | A fresh name for each deployment attempt, for example `fina-migrate-0001-initial-schema-release-123`. |
-| Container `image` | The exact registry image tag or digest being deployed to the application; replace `fina:latest`. |
-| Namespace | The target environment's namespace, supplied to `kubectl` below. |
-| `fina-database` ConfigMap | Non-secret connection details: keys `host`, `port`, `user`, `name`. The manifest reads these into `FINA_DB_HOST`/`FINA_DB_PORT`/`FINA_DB_USER`/`FINA_DB_NAME`. |
-| `fina-vault` ConfigMap | Vault endpoint, keys `url`, `engine`, `secret_path` -- the same values the application Deployment uses, since this Job reads the same Vault secret. |
-| `fina-vault-approle` Secret | Vault AppRole credentials, keys `role_id`, `secret_id`. |
-| Pod `imagePullSecrets` / service account | The corporate registry access required to pull the image, either configured on the Job or supplied by the platform. |
-
-The Job must reach the same PostgreSQL database as the application, using an
-account with permission to apply the migrations. There is no database-URL
-secret: the Vault secret at `fina-vault`'s `secret_path` must contain a
-`db_password` key (same as the application's own secret), which the Job
-resolves itself over the AppRole above -- provision that Vault entry and the
-AppRole through the corporate secret-management process before creating the
-Job; do not commit credentials.
-
-The migration process constructs `DatabaseSettings` from
-[`src/fina/config.py`](../src/fina/config.py). It needs the `fina-database`/
-`fina-vault`/`fina-vault-approle` values above to assemble its own
-`database_url` from parts, but no `FINA_MCP_API_KEY` or any other part of the
-application's environment -- `DatabaseSettings` never requires those, even
-though it resolves Vault the same way `Settings` does.
-
-Keep [`alembic/`](../alembic/) and [`alembic.ini`](../alembic.ini) in the image.
-The existing Job uses `restartPolicy: Never`, allows two retries, has a
-300-second execution deadline, and is eligible for cleanup one hour after it
-finishes. Preserve its non-root and read-only filesystem settings.
-
-## Run migrations before deployment
-
-Run this as a pipeline shell step from the repository root after preparing the
-manifest. Replace the namespace below and set `FINA_MIGRATION_JOB` to exactly the
-`metadata.name` in that manifest. These shell variables do not change the YAML.
+For the development image naming shown in the GitLab log, insert the following
+**after the existing `APP_VERSION` calculation and configuration deployment,
+before the application's `helm upgrade`**:
 
 ```bash
 set -eu
-
-FINA_DEPLOY_NAMESPACE="replace-with-target-namespace"
-FINA_MIGRATION_JOB="fina-migrate-0001-initial-schema-release-123"
-
-kubectl --namespace "$FINA_DEPLOY_NAMESPACE" create -f k8s/migration-job.yaml
-kubectl --namespace "$FINA_DEPLOY_NAMESPACE" wait \
-  --for=condition=complete "job/$FINA_MIGRATION_JOB" --timeout=360s
+export KUBE_CONTEXT="$K8S_CLUSTER_DEV"
+export FINA_MIGRATION_IMAGE="${CR_DEVELOP_URL}/${CI_PROJECT_PATH}:${APP_VERSION}"
+sh k8s/migrate.sh
 ```
 
-Use `create` with a fresh Job name so an existing completed Job cannot be
-mistaken for a new successful migration. The wait timeout allows some margin
-beyond the Job's 300-second deadline. A failed Job cannot satisfy this wait;
-the command may wait until its timeout before returning failure.
+`NAMESPACE` is already set in `.gitlab-ci.yml`. The full image reference must
+match the image passed to Helm. If the shared template has a variable holding
+that reference, use it directly instead of constructing another tag.
 
-Configure the application deployment stage to run only if this step succeeds.
-Then deploy the same image through the corporate chart and confirm that at
-least two application replicas become Ready. A pipeline rerun needs a fresh
-Job name; `alembic upgrade head` has nothing to apply when that image's target
-schema is already current.
+Use one `resource_group` for the entire migration-and-deployment job targeting
+a given environment, so two pipelines cannot migrate/deploy that database at
+the same time. Preserve any existing deployment lock. GitLab documents
+[resource groups](https://docs.gitlab.com/ci/resource_groups/) and
+[overriding included jobs](https://docs.gitlab.com/ci/yaml/#include).
 
-For a failed or timed-out migration, stop the rollout and inspect the Job:
+Do not add a second independent deploy job or override a guessed job name:
+that could leave the original deployment running without waiting for migration.
+To finish the integration, inspect the existing deploy job in GitLab's expanded
+CI configuration, including its name, stage, rules, before_script and script.
+
+## Required cluster configuration
+
+The migration Job uses the same corporate references as the application chart:
+
+| Resource | Required configuration |
+| --- | --- |
+| `config-fina` ConfigMap | `FINA_DB_HOST`, `FINA_DB_PORT`, `FINA_DB_USER`, `FINA_DB_NAME`, `VAULT_URL`, `VAULT_ENGINE`, `VAULT_SECRET_PATH`. Applied before the migration step. |
+| `common-vault` Secret | `VAULT_ROLE_ID_AI_AGENTS` and `VAULT_SECRET_ID_AI_AGENTS`. |
+| `harbor` image pull Secret | Access to the application image in the target namespace. |
+| Vault secret | A `db_password` key for the application's database role. |
+
+The Job imports `config-fina` with `envFrom`; `DatabaseSettings` ignores keys
+unrelated to the database. It resolves the database password from Vault through
+the same AppRole as the application, without requiring `FINA_MCP_API_KEY`.
+Verify that the Job and application resolve the same database, especially if
+`database_url` is also configured and overrides the separate connection fields.
+The database role must have permission to apply migrations.
+
+Keep `alembic/` and `alembic.ini` in the application image. The Job retains its
+non-root user, read-only filesystem, 300-second execution deadline, two retries
+and one-hour cleanup TTL. The helper waits up to 360 seconds, allowing margin
+for Kubernetes to report completion. A failed Job may use the full wait timeout.
+
+Kubernetes generates a fresh Job name for every invocation, so a completed Job
+cannot be mistaken for a new migration. The helper prints its resource name;
+use that name to inspect it before the one-hour cleanup:
 
 ```bash
-kubectl --namespace "$FINA_DEPLOY_NAMESPACE" describe "job/$FINA_MIGRATION_JOB"
-kubectl --namespace "$FINA_DEPLOY_NAMESPACE" logs \
-  --selector "job-name=$FINA_MIGRATION_JOB" --all-containers=true --prefix=true
+kubectl --context "$KUBE_CONTEXT" --namespace "$NAMESPACE" \
+  describe job/fina-migrate-REPLACE-WITH-GENERATED-NAME
+kubectl --context "$KUBE_CONTEXT" --namespace "$NAMESPACE" \
+  logs job/fina-migrate-REPLACE-WITH-GENERATED-NAME --all-containers=true
 ```
 
-Collect diagnostics before the one-hour cleanup removes the Job and its pods.
-Check that the previous Job's pods have stopped before submitting another
-attempt. Correct the cause and use a fresh name; do not bypass the migration
-failure to deploy the application.
+If a pipeline is canceled or the wait times out, the Kubernetes Job may still
+be running. Check that its pods have stopped before retrying. Do not bypass a
+failed migration to deploy the application. Once the schema is current,
+`alembic upgrade head` has no further changes to apply on subsequent rollouts.
+
+## Diagnose readiness failures
+
+A successful `helm upgrade` followed by `/probes/ready` returning `503` means
+the rollout has not become ready. After startup, this endpoint connects to
+PostgreSQL and runs `SELECT version_num FROM alembic_version`; the value must
+be `0001_initial_schema` for this image. API mode still requires this check.
+
+Read the readiness transition in the application logs. The failure type and,
+for wrapped database errors, SQLSTATE are included in the message itself, so
+they remain visible when the corporate console formatter omits `extra` fields.
+Driver messages, SQL parameters and credentials are not logged.
+
+| Log reason | Check |
+| --- | --- |
+| `ProgrammingError (SQLSTATE 42P01)` | The query cannot find `alembic_version`. Verify the database and schema/search path, then run the migration Job above if the schema has not been initialized. |
+| `DatabaseSchemaMismatch` | Read the accompanying `expected=...` and `found=...` message. Match the migration and application image; `found=None` means the version table is empty. |
+| SQLSTATE `42501` | The application database role lacks required permissions. |
+| `TimeoutError`, `ConnectionRefusedError`, `gaierror` | Check database connectivity, hostname, port and response time from the pod. The database probe has a two-second deadline. |
+| `InvalidPasswordError` | Check the database role and the `db_password` secret supplied by Vault. |
+
+SQLSTATE meanings are defined in the
+[PostgreSQL error code reference](https://www.postgresql.org/docs/current/errcodes-appendix.html).
+
+The development ConfigMap uses `FINA_DB_HOST`, `FINA_DB_PORT`, `FINA_DB_USER`
+and `FINA_DB_NAME`, with `db_password` supplied by Vault. `FINA_DB_URL` and
+`FINA_DB_DB` are not settings recognized by this application. The chart's
+`sharedEnvVars` must reference the ConfigMap keys to pass them to the pod.
+A configured `database_url` (including `FINA_DATABASE_URL` or a value supplied
+by Vault) takes precedence over these separate connection fields; check for a
+stale override when the pod still connects to the wrong database.
+
+The shared pipeline include in `.gitlab-ci.yml` does not wire in this
+repository's migration Job. Confirm that a migration step succeeded against
+the same database before retrying a rollout; creating ConfigMaps and running
+Helm alone does not initialize the schema.
 
 ## Releases that change the schema
 

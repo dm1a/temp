@@ -37,14 +37,14 @@ class DatabaseProbe:
                 revision = result.scalar_one_or_none()
 
                 if revision != CURRENT_SCHEMA_REVISION:
-                    # The readiness probe only reports the exception type
-                    # (probes.py keeps driver text out of logs), so the two
-                    # revisions are recorded here -- they are the whole
-                    # diagnosis when a migration Job has not run yet, or has
-                    # run ahead of this replica's image. See k8s/README.md.
+                    # Include revisions in the message as well as structured
+                    # fields so py_logs' console output shows the diagnosis.
                     if revision != self._last_revision:
                         logger.error(
-                            "database schema revision is not the one this image expects",
+                            "database schema revision is not the one this image expects: "
+                            "expected=%s, found=%r",
+                            CURRENT_SCHEMA_REVISION,
+                            revision,
                             extra={
                                 "expected_revision": CURRENT_SCHEMA_REVISION,
                                 "found_revision": revision,

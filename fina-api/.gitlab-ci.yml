@@ -6,6 +6,25 @@ include:
     ref: "feature/inject-ca"
     file: "python.gitlab-ci.yml"
 
+# k8s/migrate.sh belongs inside the deploy job, before helm upgrade, so that
+# set -e stops the rollout on a failed migration. The included template's
+# deploy job name is not known here, so this runs as its own job in the same
+# stage: the application pod stays unready until the schema exists, and its
+# readiness probe recovers on its own once this Job completes.
+migrate:dev:
+  stage: deploy
+  image: cr.ci.sberinsur.local/infra/helm-image:v1.0.5
+  variables:
+    KUBE_CONTEXT: "${K8S_CLUSTER_DEV}"
+  script:
+    - set -eu
+    - APP_VERSION="$(git describe --tags --match 'v*.*.*' 2>/dev/null || echo v1.0.0-$(git rev-list --count HEAD)-${CI_COMMIT_SHORT_SHA})"
+    - export FINA_MIGRATION_IMAGE="${CR_DEVELOP_URL}/${CI_PROJECT_PATH}:${APP_VERSION}"
+    - echo "migrating with ${FINA_MIGRATION_IMAGE}"
+    - sh k8s/migrate.sh
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "feature/fina"'
+
 variables:
   TEAM_TAG: "AI"
   CODEBASE_BUILD_TOOL: "pip"

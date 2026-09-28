@@ -41,3 +41,6 @@ build/
 !Dockerfile.public
 !Dockerfile.dockerignore
 !Dockerfile.public.dockerignore
+
+# GitLab deployment helper.
+!/k8s/migrate.sh

@@ -225,10 +225,13 @@ What gets logged, and where:
   shutdown, `INFO` otherwise. Routine `/probes/*` and `/metrics` traffic is
   deliberately silent, so healthcheck polling can't drown out the signal.
 - **Readiness transitions** (`api/probes.py`): logged when readiness
-  *changes*, not on every poll, with the failure reason. A schema-revision
-  mismatch additionally logs the expected and found revisions
-  (`db/health.py`) -- the whole diagnosis when a migration Job hasn't run
-  yet, or has run ahead of a replica's image (see `k8s/README.md`).
+  *changes*, not on every poll, with the failure type and SQLSTATE when
+  available from a wrapped database error. These diagnostics appear in the
+  message as well as structured fields, so the corporate text console shows
+  them too. A schema-revision mismatch additionally logs the expected and
+  found revisions (`db/health.py`). See the
+  [readiness troubleshooting guide](k8s/README.md#diagnose-readiness-failures)
+  for configuration, connectivity and migration checks.
 - **Provider calls** (`adapters/`): every call across the MTS AudioFetcher /
   FINA Analyzer boundary logs its outcome and duration -- success, a
   provider error (with error code and retryable flag), or a raised
