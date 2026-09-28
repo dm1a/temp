@@ -1,9 +1,15 @@
-# Submitted by migrate.sh with the exact application image being deployed.
-# Kubernetes generates a fresh name for every attempt; completed Jobs are never reused.
+{{- /* The deploy:develop job copies this into the downloaded common chart. */ -}}
+{{- $configGen := index .Values "config-gen" | default dict -}}
+{{- $config := dig "extraConfigMaps" "config-fina" (dict) $configGen -}}
 apiVersion: batch/v1
 kind: Job
 metadata:
-  generateName: fina-migrate-0001-initial-schema-
+  name: {{ printf "%s-migrate" .Release.Name | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+  annotations:
+    "helm.sh/hook": pre-install,pre-upgrade
+    "helm.sh/hook-weight": "-5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
   labels:
     app.kubernetes.io/name: fina
     app.kubernetes.io/component: migration
@@ -26,20 +32,17 @@ spec:
         runAsGroup: 10001
       containers:
         - name: migrate
-          image: fina:replace-in-ci # migrate.sh requires the exact deployment image
+          image: {{ required "Set finaMigrationImage to the exact application image being deployed" .Values.finaMigrationImage | quote }}
           command: ["alembic", "upgrade", "head"]
-          envFrom:
-            # The same ConfigMap the application Deployment reads, so the
-            # Job's connection details can never drift from the app's.
-            # DatabaseSettings ignores the keys it does not recognise.
-            - configMapRef:
-                name: config-fina
           env:
-            # DatabaseSettings only -- this Job must never be given
-            # fina-mcp-api-key; alembic/env.py never constructs the full
-            # Settings, only DatabaseSettings. There is no database-URL
-            # secret: db_password comes from Vault, resolved over the
-            # AppRole below, the same mechanism the application uses.
+            # Render from the same values that create config-fina. Pre-install
+            # runs before that ConfigMap exists; pre-upgrade precedes its update.
+            {{- range $key := list "FINA_DB_HOST" "FINA_DB_PORT" "FINA_DB_USER" "FINA_DB_NAME" "VAULT_URL" "VAULT_ENGINE" "VAULT_SECRET_PATH" }}
+            - name: {{ $key }}
+              value: {{ required (printf "config-gen.extraConfigMaps.config-fina.%s is required for migration" $key) (index $config $key) | quote }}
+            {{- end }}
+            # DatabaseSettings resolves db_password through the same Vault
+            # AppRole as the app, without requiring an MCP API key.
             - name: VAULT_ROLE_ID
               valueFrom:
                 secretKeyRef:

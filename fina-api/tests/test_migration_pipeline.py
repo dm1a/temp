@@ -1,115 +1,194 @@
+import io
 import json
 import os
+import shutil
 import subprocess
 import sys
+import tarfile
 from pathlib import Path
 
 import pytest
+import yaml
 
-SCRIPT = Path(__file__).parents[1] / "k8s" / "migrate.sh"
+ROOT = Path(__file__).parents[1]
 
 
 @pytest.fixture
-def migration_runner(tmp_path: Path):
-    kubectl = tmp_path / "kubectl"
-    kubectl.write_text(
-        f"#!{sys.executable}\n"
-        """import json
+def deploy_runner(tmp_path: Path):
+    config = yaml.safe_load((ROOT / ".gitlab-ci.yml").read_text())
+    script = "\n".join(config["deploy:develop"]["script"])
+    shutil.copytree(ROOT / ".chart", tmp_path / ".chart")
+    package = tmp_path / "fixture.tgz"
+    with tarfile.open(package, "w:gz") as archive:
+        for name, contents in {
+            "Chart.yaml": (
+                "apiVersion: v2\nname: common-chart\nversion: 1.0.0\n"
+                "appVersion: old\ndescription: common\n"
+            ),
+            "templates/deployment.yaml": "# shared chart fixture\n",
+        }.items():
+            data = contents.encode()
+            info = tarfile.TarInfo("common-chart/" + name)
+            info.size = len(data)
+            archive.addfile(info, io.BytesIO(data))
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    for name in ("git", "helm", "kubectl", "kubedog"):
+        command = commands / name
+        command.write_text(
+            f"#!{sys.executable}\n"
+            """import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
+tool = Path(sys.argv[0]).name
 args = sys.argv[1:]
-with open(os.environ["KUBECTL_CALLS"], "a") as output:
-    output.write(json.dumps(args) + "\\n")
-action = next(arg for arg in args if arg in {"set", "create", "wait", "describe", "logs"})
-if action == os.environ.get("FAIL_ACTION"):
+with open(os.environ["COMMAND_TRACE"], "a") as trace:
+    trace.write(json.dumps([tool, args]) + "\\n")
+operation = tool + ("-" + args[0] if tool == "helm" else "")
+if operation == os.environ.get("FAIL_OPERATION"):
     sys.exit(1)
-if action == "set":
-    print("rendered-migration-manifest")
-elif action == "create":
-    assert Path(args[args.index("-f") + 1]).read_text().strip() == "rendered-migration-manifest"
-    print("job.batch/fina-migrate-generated")
+if tool == "git":
+    print("v1.2.3")
+elif tool == "helm" and args[0] == "pull":
+    directory = Path(args[args.index("--destination") + 1])
+    shutil.copyfile(os.environ["CHART_FIXTURE"], directory / "common-chart-1.0.0.tgz")
+elif tool == "helm" and args[0] == "upgrade":
+    chart = Path(args[-1])
+    hook = (chart / "templates/fina-migration.yaml").read_text()
+    assert '"helm.sh/hook": pre-install,pre-upgrade' in hook
+    assert "appVersion: v1.2.3" in (chart / "Chart.yaml").read_text()
 """
-    )
-    kubectl.chmod(0o755)
-    calls = tmp_path / "calls.jsonl"
-    rollout = tmp_path / "rollout"
+        )
+        command.chmod(0o755)
+    trace = tmp_path / "trace.jsonl"
     environment = {
         **os.environ,
-        "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}",
-        "KUBECTL_CALLS": str(calls),
-        "KUBE_CONTEXT": "deployment-context",
-        "NAMESPACE": "deployment-namespace",
-        "FINA_MIGRATION_IMAGE": "registry.example/fina@sha256:exact-deployment-digest",
+        "PATH": f"{commands}{os.pathsep}{os.environ['PATH']}",
+        "CHART_FIXTURE": str(package),
+        "COMMAND_TRACE": str(trace),
+        "K8S_CLUSTER_DEV": "development-context",
+        "CR_DEVELOP_URL": "registry.example",
+        "CI_PROJECT_PATH": "team/fina",
+        "CI_PROJECT_NAME": "fina-adapter",
+        "CI_COMMIT_SHORT_SHA": "abc123",
+        "HELM_CHART_COMMON_REF": "v1.0.0",
+        "HELM_COMMON_CHART_NAME": "helm-private-repo/common-chart",
+        "HELM_SET_PARAMS": "",
+        "NAMESPACE": "ai-agents",
+        "KUBEDOG_TIMEOUT": "300",
     }
-    environment.pop("FAIL_ACTION", None)
 
-    def run(*, fail_action: str = "", missing: str = ""):
-        env = {**environment, "FAIL_ACTION": fail_action}
-        if missing:
-            env.pop(missing)
-        # Model the deploy job's set -e: Helm can run only after migration succeeds.
+    def run(fail_operation=""):
         result = subprocess.run(
-            ["sh", "-ec", 'sh "$1"; touch "$2"', "deploy", str(SCRIPT), str(rollout)],
-            env=env,
+            ["bash", "-c", script],
             cwd=tmp_path,
-            capture_output=True,
+            env={**environment, "FAIL_OPERATION": fail_operation},
             text=True,
+            capture_output=True,
             timeout=10,
         )
-        invocations = (
-            [json.loads(line) for line in calls.read_text().splitlines()] if calls.exists() else []
-        )
-        return result, invocations, rollout.exists()
+        return result, [json.loads(line) for line in trace.read_text().splitlines()]
 
     return run
 
 
-def test_migration_completion_allows_rollout_with_same_image_and_target(migration_runner):
-    result, calls, rolled_out = migration_runner()
+def test_deploy_installs_hook_with_same_image_before_tracking_rollout(deploy_runner):
+    result, calls = deploy_runner()
     assert result.returncode == 0, result.stderr
-    assert rolled_out
-    assert "migrate=registry.example/fina@sha256:exact-deployment-digest" in calls[0]
-    assert "--local" in calls[0]
-    for call in calls:
-        assert call[:4] == [
-            "--context",
-            "deployment-context",
-            "--namespace",
-            "deployment-namespace",
-        ]
-    wait = next(call for call in calls if "wait" in call)
-    assert "job.batch/fina-migrate-generated" in wait
-    assert "--for=condition=complete" in wait
-    assert "--timeout=360s" in wait
-    assert "completed successfully" in result.stdout
+    upgrade = next(args for tool, args in calls if tool == "helm" and args[0] == "upgrade")
+    assert "image.repository=registry.example/team/fina" in upgrade
+    assert "image.tag=v1.2.3" in upgrade
+    assert "finaMigrationImage=registry.example/team/fina:v1.2.3" in upgrade
+    assert "--no-hooks=false" in upgrade
+    assert upgrade[upgrade.index("--timeout") + 1] == "6m"
+    assert calls[-1][0] == "kubedog"
+    assert ["kubectl", ["config", "use-context", "development-context"]] in calls
 
 
-@pytest.mark.parametrize("action", ["set", "create", "wait"])
-def test_render_create_or_migration_failure_blocks_rollout(migration_runner, action):
-    result, calls, rolled_out = migration_runner(fail_action=action)
+@pytest.mark.parametrize("operation", ["helm-pull", "helm-upgrade"])
+def test_chart_or_migration_failure_stops_rollout(deploy_runner, operation):
+    result, calls = deploy_runner(operation)
     assert result.returncode != 0
-    assert not rolled_out
-    if action == "set":
-        assert len(calls) == 1
-    elif action == "create":
-        assert not any("wait" in call for call in calls)
-    else:
-        assert any("describe" in call for call in calls)
-        assert any("logs" in call for call in calls)
-        assert "application rollout must stop" in result.stderr
+    assert not any(tool == "kubedog" for tool, _ in calls)
+    if operation == "helm-upgrade":
+        assert any(tool == "kubectl" and "logs" in args for tool, args in calls)
 
 
-def test_log_collection_failure_does_not_fail_completed_migration(migration_runner):
-    result, _, rolled_out = migration_runner(fail_action="logs")
-    assert result.returncode == 0
-    assert rolled_out
-
-
-@pytest.mark.parametrize("missing", ["KUBE_CONTEXT", "NAMESPACE", "FINA_MIGRATION_IMAGE"])
-def test_missing_target_or_image_fails_before_creating_a_job(migration_runner, missing):
-    result, calls, rolled_out = migration_runner(missing=missing)
+def test_rollout_failure_still_fails_deployment(deploy_runner):
+    result, _ = deploy_runner("kubedog")
     assert result.returncode != 0
-    assert not calls
-    assert not rolled_out
+
+
+@pytest.fixture
+def hook_chart(tmp_path: Path):
+    helm = os.environ.get("FINA_TEST_HELM") or shutil.which("helm")
+    if not helm:
+        pytest.skip("Helm is required for rendering tests; set FINA_TEST_HELM or install helm")
+    (tmp_path / "templates").mkdir()
+    (tmp_path / "Chart.yaml").write_text(
+        "apiVersion: v2\nname: migration-test\nversion: 0.1.0\nappVersion: unrelated\n"
+    )
+    shutil.copyfile(
+        ROOT / ".chart/fina-migration.yaml", tmp_path / "templates/fina-migration.yaml"
+    )
+    config = yaml.safe_load((ROOT / ".chart/config-develop.yaml").read_text())
+    config["finaMigrationImage"] = "registry.example/fina@sha256:" + "a" * 64
+
+    def render(*, upgrade=False, missing=None):
+        values = json.loads(json.dumps(config))
+        if missing == "image":
+            del values["finaMigrationImage"]
+        elif missing:
+            del values["config-gen"]["extraConfigMaps"]["config-fina"][missing]
+        values["config-gen"]["extraConfigMaps"]["config-fina"]["FINA_DB_HOST"] = "new-db-host"
+        (tmp_path / "values.yaml").write_text(yaml.safe_dump(values))
+        args = [helm, "template", "fina-adapter", str(tmp_path), "--namespace", "ai-agents"]
+        if upgrade:
+            args.append("--is-upgrade")
+        result = subprocess.run(args, text=True, capture_output=True, timeout=10)
+        return result, values
+
+    return render
+
+
+@pytest.mark.parametrize("upgrade", [False, True])
+def test_hook_uses_current_values_without_requiring_existing_configmap(hook_chart, upgrade):
+    result, values = hook_chart(upgrade=upgrade)
+    assert result.returncode == 0, result.stderr
+    job = yaml.safe_load(result.stdout)
+    annotations = job["metadata"]["annotations"]
+    assert annotations["helm.sh/hook"] == "pre-install,pre-upgrade"
+    assert "hook-failed" not in annotations["helm.sh/hook-delete-policy"]
+    assert job["metadata"]["name"] == "fina-adapter-migrate"
+    assert job["metadata"]["namespace"] == "ai-agents"
+    container = job["spec"]["template"]["spec"]["containers"][0]
+    assert container["image"] == values["finaMigrationImage"]
+    assert container["command"] == ["alembic", "upgrade", "head"]
+    assert "envFrom" not in container
+    env = {entry["name"]: entry for entry in container["env"]}
+    config = values["config-gen"]["extraConfigMaps"]["config-fina"]
+    for key in (
+        "FINA_DB_HOST",
+        "FINA_DB_PORT",
+        "FINA_DB_USER",
+        "FINA_DB_NAME",
+        "VAULT_URL",
+        "VAULT_ENGINE",
+        "VAULT_SECRET_PATH",
+    ):
+        assert env[key]["value"] == config[key]
+    assert env["VAULT_ROLE_ID"]["valueFrom"]["secretKeyRef"] == {
+        "name": "common-vault",
+        "key": "VAULT_ROLE_ID_AI_AGENTS",
+    }
+    assert "FINA_MCP_API_KEY" not in env
+
+
+@pytest.mark.parametrize("missing", ["image", "FINA_DB_NAME", "VAULT_SECRET_PATH"])
+def test_hook_rejects_missing_image_or_database_configuration(hook_chart, missing):
+    result, _ = hook_chart(missing=missing)
+    assert result.returncode != 0
+    assert ("Set finaMigrationImage" if missing == "image" else missing) in result.stderr

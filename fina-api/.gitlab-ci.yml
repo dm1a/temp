@@ -1,29 +1,51 @@
-# Corporate template from the deployment instructions.
-# Migration execution still needs to be connected to the shared pipeline;
-# this include alone does not submit k8s/migration-job.yaml.
+# Preserve the shared build, deployment rules, credentials and other environments.
 include:
   - project: "sberinsur/infra-public/common-pipeline"
     ref: "feature/inject-ca"
     file: "python.gitlab-ci.yml"
 
-# k8s/migrate.sh belongs inside the deploy job, before helm upgrade, so that
-# set -e stops the rollout on a failed migration. The included template's
-# deploy job name is not known here, so this runs as its own job in the same
-# stage: the application pod stays unready until the schema exists, and its
-# readiness probe recovers on its own once this Job completes.
-migrate:dev:
-  stage: deploy
-  image: cr.ci.sberinsur.local/infra/helm-image:v1.0.5
-  variables:
-    KUBE_CONTEXT: "${K8S_CLUSTER_DEV}"
+# Override the existing job's script, retaining its deploy-dev stage, manual
+# feature-branch rules, build_image prerequisite, image and before_script.
+deploy:develop:
+  resource_group: fina-develop
+  interruptible: false
+  timeout: 15m
   script:
-    - set -eu
-    - APP_VERSION="$(git describe --tags --match 'v*.*.*' 2>/dev/null || echo v1.0.0-$(git rev-list --count HEAD)-${CI_COMMIT_SHORT_SHA})"
-    - export FINA_MIGRATION_IMAGE="${CR_DEVELOP_URL}/${CI_PROJECT_PATH}:${APP_VERSION}"
-    - echo "migrating with ${FINA_MIGRATION_IMAGE}"
-    - sh k8s/migrate.sh
-  rules:
-    - if: '$CI_COMMIT_BRANCH == "feature/fina"'
+    - |
+      set -euo pipefail
+      kubectl config use-context "${K8S_CLUSTER_DEV}"
+      export APP_VERSION="$(git describe --tags --match 'v*.*.*' 2>/dev/null || echo v1.0.0-$(git rev-list --count HEAD)-${CI_COMMIT_SHORT_SHA})"
+      export FINA_MIGRATION_IMAGE="${CR_DEVELOP_URL}/${CI_PROJECT_PATH}:${APP_VERSION}"
+      echo "APP_VERSION=$APP_VERSION"
+
+      export CHART_VER="${HELM_CHART_COMMON_REF#v}"
+      mkdir -p _chart
+      helm pull "oci://${CR_DEVELOP_URL}/${HELM_COMMON_CHART_NAME}" --version "$CHART_VER" --destination _chart
+      tar -xzf "_chart/common-chart-${CHART_VER}.tgz" -C _chart
+      export CHART_DIR="_chart/common-chart"
+      sed -i -r "s/^appVersion:.*/appVersion: ${APP_VERSION}/" "${CHART_DIR}/Chart.yaml"
+      sed -i -r "s/^version:.*/version: ${APP_VERSION#v}/" "${CHART_DIR}/Chart.yaml"
+      sed -i -r "s/^name:.*/name: ${CI_PROJECT_NAME}/" "${CHART_DIR}/Chart.yaml"
+      sed -i -r "s/^description:.*/description: Use helm-chart-common version ${HELM_CHART_COMMON_REF}/" "${CHART_DIR}/Chart.yaml"
+      cp .chart/fina-migration.yaml "${CHART_DIR}/templates/fina-migration.yaml"
+
+      if ! helm upgrade -i -n "${NAMESPACE}" \
+        -f .chart/config-develop.yaml \
+        -f .chart/values-common.yaml \
+        -f .chart/values-develop.yaml \
+        ${HELM_SET_PARAMS} \
+        --set-string image.repository="${CR_DEVELOP_URL}/${CI_PROJECT_PATH}" \
+        --set-string image.tag="${APP_VERSION}" \
+        --set-string finaMigrationImage="${FINA_MIGRATION_IMAGE}" \
+        --timeout 6m \
+        --no-hooks=false \
+        "${CI_PROJECT_NAME}" "${CHART_DIR}"; then
+        kubectl -n "${NAMESPACE}" describe "job/${CI_PROJECT_NAME}-migrate" || true
+        kubectl -n "${NAMESPACE}" logs "job/${CI_PROJECT_NAME}-migrate" --all-containers=true --prefix=true || true
+        exit 1
+      fi
+
+      kubedog -n "${NAMESPACE}" -t "${KUBEDOG_TIMEOUT}" rollout track deployment "${CI_PROJECT_NAME}"
 
 variables:
   TEAM_TAG: "AI"

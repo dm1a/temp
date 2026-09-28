@@ -230,7 +230,7 @@ What gets logged, and where:
   message as well as structured fields, so the corporate text console shows
   them too. A schema-revision mismatch additionally logs the expected and
   found revisions (`db/health.py`). See the
-  [readiness troubleshooting guide](k8s/README.md#diagnose-readiness-failures)
+  [readiness troubleshooting guide](.chart/README.md#diagnose-readiness-failures)
   for configuration, connectivity and migration checks.
 - **Provider calls** (`adapters/`): every call across the MTS AudioFetcher /
   FINA Analyzer boundary logs its outcome and duration -- success, a
@@ -500,7 +500,7 @@ does not require the MCP key.
 
 Run `alembic upgrade head` **once as a separate deployment job** using the same
 image, `FINA_DB_HOST`/`FINA_DB_USER`/`FINA_DB_NAME` and Vault (`VAULT_*`,
-resolving `db_password`) -- see "Configuration" and [`k8s/`](k8s/). There is
+resolving `db_password`) -- see "Configuration" and [deployment instructions](.chart/README.md). There is
 no database-URL secret in this deployment; a literal `FINA_DATABASE_URL` is
 only for local dev and CI, where no Vault is available. Migration jobs do not
 require `FINA_MCP_API_KEY` or any other app secret, since the migration job
@@ -510,13 +510,14 @@ in every replica's startup command. The single initial migration,
 complete schema, including claim tokens, claim-state constraints, the
 single-active-discovery constraint, and the transcript lookup index.
 
-Minimal Kubernetes manifests (Deployment, Services, ConfigMap/Secret
-references, migration Job) live under [`k8s/`](k8s/), along with the
-maintenance procedure a future schema-changing release needs: `/probes/ready`
-requires an *exact* Alembic revision match, so a schema change and a rolling
-update can never both be zero-downtime at once with this readiness check --
-see `k8s/README.md` rather than building schema-compatibility logic into the
-app for this MVP.
+Development deployment runs the [Helm migration hook](.chart/fina-migration.yaml)
+through the existing `deploy:develop` GitLab job. Helm waits for migration success
+before applying application resources. The hook reads database connection values
+from the same values file as the application, without requiring its ConfigMap to
+exist before a first install. See [`.chart/README.md`](.chart/README.md) for deployment,
+failure diagnosis and the maintenance procedure for schema-changing releases.
+`/probes/ready` requires an *exact* Alembic revision match, so schema-changing
+releases require an availability gap in this MVP.
 
 ## Tests
 
