@@ -27,9 +27,23 @@ The job uses `resource_group: fina-develop` to serialize development releases,
 `interruptible: false` to avoid automatic cancellation mid-migration, and a
 15-minute job timeout to cover migration plus rollout tracking.
 
-The override applies to **development only**. Preproduction and production jobs
-continue to come from the shared template. Their environment values must be
+The migration override applies to **development only**. Preproduction and production
+deployment jobs continue to come from the shared template. Their environment values must be
 completed before adapting the hook to those jobs.
+
+## Choosing the pipeline job
+
+Run `deploy:develop` to deploy the application and apply migrations.
+`stop:develop` and `stop:preprod` run `helm uninstall` and remove the release.
+
+The shared stop jobs skip repository checkout (`GIT_STRATEGY: none`). Their
+original setup only called `kubectl config current-context`, which fails when
+no context is selected. Local `before_script` overrides first select the inherited
+`KUBE_CONTEXT` for the corresponding environment, following the
+[GitLab agent context setup](https://docs.gitlab.com/user/clusters/agent/ci_cd_workflow/#update-your-gitlab-ciyml-file-to-run-kubectl-commands).
+A missing or unavailable context fails the job before uninstall can run.
+
+After pushing CI changes, start a new pipeline to use the updated configuration.
 
 ## Configuration on first install and upgrade
 

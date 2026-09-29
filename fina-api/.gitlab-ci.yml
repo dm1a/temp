@@ -47,6 +47,20 @@ deploy:develop:
 
       kubedog -n "${NAMESPACE}" -t "${KUBEDOG_TIMEOUT}" rollout track deployment "${CI_PROJECT_NAME}"
 
+# The shared stop jobs skip checkout and check current-context before selecting it.
+# Keep their inherited environment, manual rules and uninstall script.
+stop:develop:
+  before_script:
+    - set -euo pipefail
+    - kubectl config use-context "${KUBE_CONTEXT:?KUBE_CONTEXT must identify the target cluster}"
+    - kubectl config current-context
+
+stop:preprod:
+  before_script:
+    - set -euo pipefail
+    - kubectl config use-context "${KUBE_CONTEXT:?KUBE_CONTEXT must identify the target cluster}"
+    - kubectl config current-context
+
 variables:
   TEAM_TAG: "AI"
   CODEBASE_BUILD_TOOL: "pip"

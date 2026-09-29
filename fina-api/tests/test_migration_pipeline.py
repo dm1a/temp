@@ -122,6 +122,69 @@ def test_rollout_failure_still_fails_deployment(deploy_runner):
     assert result.returncode != 0
 
 
+@pytest.mark.parametrize("job", ["stop:develop", "stop:preprod"])
+@pytest.mark.parametrize("scenario", ["fresh", "stale", "missing", "unknown"])
+def test_stop_job_selects_target_context_before_continuing(tmp_path: Path, job, scenario):
+    config = yaml.safe_load((ROOT / ".gitlab-ci.yml").read_text())
+    script = "\n".join(config[job]["before_script"])
+    # This marker represents reaching the inherited script after before_script.
+    script += "\nprintf ready > script-reached\n"
+    target = job.removeprefix("stop:") + "-context"
+    state = tmp_path / "selected-context"
+    if scenario != "fresh":
+        state.write_text("other-context")
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    kubectl = commands / "kubectl"
+    kubectl.write_text(
+        f"#!{sys.executable}\n"
+        """import os
+import sys
+from pathlib import Path
+
+state = Path(os.environ["CONTEXT_STATE"])
+args = sys.argv[1:]
+if args[:2] == ["config", "use-context"]:
+    if len(args) != 3 or args[2] != os.environ["AVAILABLE_CONTEXT"]:
+        sys.exit("context does not exist")
+    state.write_text(args[2])
+elif args == ["config", "current-context"]:
+    if not state.exists():
+        sys.exit("current-context is not set")
+    print(state.read_text())
+else:
+    sys.exit("unexpected kubectl command")
+"""
+    )
+    kubectl.chmod(0o755)
+    environment = {
+        **os.environ,
+        "PATH": f"{commands}{os.pathsep}{os.environ['PATH']}",
+        "CONTEXT_STATE": str(state),
+        "AVAILABLE_CONTEXT": target,
+        "KUBE_CONTEXT": "unavailable-context" if scenario == "unknown" else target,
+    }
+    if scenario == "missing":
+        environment.pop("KUBE_CONTEXT")
+    result = subprocess.run(
+        ["bash", "-c", script],
+        cwd=tmp_path,
+        env=environment,
+        text=True,
+        capture_output=True,
+        timeout=10,
+    )
+    if scenario in ("fresh", "stale"):
+        assert result.returncode == 0, result.stderr
+        assert state.read_text() == target
+        assert target in result.stdout
+        assert (tmp_path / "script-reached").exists()
+    else:
+        assert result.returncode != 0
+        assert not (tmp_path / "script-reached").exists()
+        assert state.read_text() == "other-context"
+
+
 @pytest.fixture
 def hook_chart(tmp_path: Path):
     helm = os.environ.get("FINA_TEST_HELM") or shutil.which("helm")
@@ -131,9 +194,7 @@ def hook_chart(tmp_path: Path):
     (tmp_path / "Chart.yaml").write_text(
         "apiVersion: v2\nname: migration-test\nversion: 0.1.0\nappVersion: unrelated\n"
     )
-    shutil.copyfile(
-        ROOT / ".chart/fina-migration.yaml", tmp_path / "templates/fina-migration.yaml"
-    )
+    shutil.copyfile(ROOT / ".chart/fina-migration.yaml", tmp_path / "templates/fina-migration.yaml")
     config = yaml.safe_load((ROOT / ".chart/config-develop.yaml").read_text())
     config["finaMigrationImage"] = "registry.example/fina@sha256:" + "a" * 64
 
